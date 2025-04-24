@@ -28,8 +28,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const stageRef = useRef<Konva.Stage>(null);
   const [isDraggingRoom, setIsDraggingRoom] = useState(false);
-  const [isPanning, setIsPanning] = useState(false);
-  const lastMousePosRef = useRef({ x: 0, y: 0 });
   const [isPlacingRoom, setIsPlacingRoom] = useState(false);
   const [previewRoomPosition, setPreviewRoomPosition] = useState({ gridX: 0, gridY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,25 +85,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   // Use Gesture Hook for handling pan and pinch gestures
   useGesture(
     {
-      // Handle panning (both mouse drag and touch)
-      onDrag: ({ movement: [dx, dy], first, last, touches }) => {
-        // Skip if dragging a room or if using more than one finger
-        if (isDraggingRoom) return;
-        
-        if (first) {
-          setIsPanning(true);
-        }
-
-        setPosition(prev => ({
-          x: prev.x + dx,
-          y: prev.y + dy
-        }));
-
-        if (last) {
-          setIsPanning(false);
-        }
-      },
-      
       // Handle pinch to zoom
       onPinch: ({ origin: [ox, oy], first, movement: [ms], offset: [scale], memo }) => {
         if (isDraggingRoom) return;
@@ -196,10 +175,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     {
       target: containerRef,
       eventOptions: { passive: false },
-      drag: {
-        filterTaps: true,
-        pointer: { touch: true }
-      },
       pinch: {
         distanceBounds: { min: 0 },
         scaleBounds: { min: 0.1, max: 5 },
@@ -237,6 +212,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   const handleRoomDragEnd = (e: Konva.KonvaEventObject<DragEvent>, roomId: string) => {
     const room = floorPlan.rooms.find(r => r.id === roomId);
     if (!room) return;
+    
+    // Reset the dragging flag
+    setIsDraggingRoom(false);
     
     // Get the new position of the room after dragging
     const newX = e.target.x();
@@ -588,40 +566,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setConnectingPortals(null);
   };
 
-  // Manual panning implementation
-  const handleCanvasMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    // Only allow panning when clicking on empty canvas, not on rooms
-    if (e.target === e.target.getStage() && !isDraggingRoom) {
-      const stage = stageRef.current;
-      if (!stage) return;
-      
-      const point = stage.getPointerPosition();
-      if (point) {
-        setIsPanning(true);
-        lastMousePosRef.current = point;
-      }
-    }
-  };
-  
   const handleCanvasMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (isPanning && !isDraggingRoom) {
-      const stage = stageRef.current;
-      if (!stage) return;
-      
-      const point = stage.getPointerPosition();
-      if (point) {
-        const dx = point.x - lastMousePosRef.current.x;
-        const dy = point.y - lastMousePosRef.current.y;
-        
-        setPosition({
-          x: position.x + dx,
-          y: position.y + dy
-        });
-        
-        lastMousePosRef.current = point;
-      }
-    }
-    
     // Update preview room position when in placement mode
     if (isPlacingRoom) {
       const stage = stageRef.current;
@@ -640,14 +585,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       
       setPreviewRoomPosition({ gridX, gridY });
     }
-  };
-  
-  const handleCanvasMouseUp = () => {
-    setIsPanning(false);
-  };
-  
-  const handleCanvasMouseLeave = () => {
-    setIsPanning(false);
   };
 
   // Add a dedicated function to handle canvas clicks during room placement
@@ -757,6 +694,15 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     );
   };
 
+  // Add an effect to ensure isDraggingRoom is always reset
+  useEffect(() => {
+    return () => {
+      // This will run when the component unmounts or when dependencies change
+      // Ensures we don't leave the app in a broken state
+      setIsDraggingRoom(false);
+    };
+  }, []);
+
   return (
     <div 
       className="floor-plan-canvas-container" 
@@ -787,10 +733,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         height={height}
         onClick={isPlacingRoom ? handleCanvasClick : handleDeselect}
         ref={stageRef}
-        onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
-        onMouseUp={handleCanvasMouseUp}
-        onMouseLeave={handleCanvasMouseLeave}
         position={position}
         scale={{x: scale, y: scale}}
       >
@@ -823,6 +766,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               gridSizeWidth={floorPlan.gridSizeWidth}
               gridSizeHeight={floorPlan.gridSizeHeight}
               onDragStart={handleRoomDragStart}
+              onDragEnd={() => setIsDraggingRoom(false)}
             />
           ))}
         </Layer>

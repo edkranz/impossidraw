@@ -11,6 +11,7 @@ interface RoomProps {
   onSizeChange: (id: string, newWidth: number, newHeight: number) => void;
   onPortalAdd?: (roomId: string, wallPosition: 'top' | 'right' | 'bottom' | 'left', position: number) => void;
   onDragStart?: () => void;
+  onDragEnd?: () => void;
   gridSizeWidth: number;
   gridSizeHeight: number;
 }
@@ -23,6 +24,7 @@ const Room: React.FC<RoomProps> = ({
   onSizeChange,
   onPortalAdd,
   onDragStart,
+  onDragEnd,
   gridSizeWidth,
   gridSizeHeight,
 }) => {
@@ -240,6 +242,11 @@ const Room: React.FC<RoomProps> = ({
           const newX = snapToGridX(e.target.x());
           const newY = snapToGridY(e.target.y());
           onPositionChange(id, newX, newY);
+          
+          // Call the optional onDragEnd callback
+          if (onDragEnd) {
+            onDragEnd();
+          }
         }}
         onTransformEnd={(e) => {
           // transformer changes scale, so we need to adjust width and height
