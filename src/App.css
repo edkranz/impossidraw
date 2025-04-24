@@ -1,38 +1,367 @@
 .App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* Navbar styles */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #282c34;
+  padding: 0.5rem 1rem;
+  color: white;
+  height: 40px;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navbar-brand h4 {
+  margin: 0;
+  font-weight: 600;
+}
+
+.app-logo {
+  height: 50px;
+  width: auto;
+  margin-right: 8px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.navbar-menu {
+  display: flex;
+  gap: 1rem;
+}
+
+.menu-item {
+  position: relative;
+}
+
+.menu-button {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0.25rem 0.5rem;
+}
+
+.menu-button:hover {
+  background-color: #3a3f4b;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  z-index: 1000;
+}
+
+.dropdown-item {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.dropdown-item .item-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
+  color: #555;
+}
+
+.dropdown-item span:nth-child(2) {
+  flex: 1;
+}
+
+.dropdown-item:hover {
+  background-color: #f5f5f5;
+}
+
+.dropdown-item:disabled {
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+.dropdown-item:disabled .item-icon {
+  color: #aaa;
+}
+
+.shortcut {
+  color: #888;
+  font-size: 12px;
+  margin-left: 16px;
+}
+
+/* Canvas container */
+.canvas-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  position: relative;
+}
+
+/* Drawing Toolbar */
+.drawing-toolbar {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.toolbar-section {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.toolbar-button {
+  min-width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #333;
+  padding: 0 10px;
+}
+
+.toolbar-button:hover {
+  background-color: #f8f8f8;
+  border-color: #bbb;
+}
+
+.toolbar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Canvas */
+.konvajs-content {
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  background-color: white;
+  margin: 0 auto;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.toolbar, .history-controls {
+  display: flex;
+  gap: 1rem;
+}
+
+.toolbar button, .history-controls button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background-color: #61dafb;
+  color: #282c34;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.3s, opacity 0.3s;
+}
+
+.toolbar button:hover, .history-controls button:hover {
+  background-color: #4fa8c9;
+}
+
+.toolbar button:active, .history-controls button:active {
+  background-color: #3d8ba6;
+}
+
+.history-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 30px;
+  background-color: #ddd;
+  margin: 0 10px;
+  align-self: center;
+}
+
+.floor-plan-canvas-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.floor-plan-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 5px;
+  background-color: #f8f8f8;
+  border-bottom: 1px solid #ddd;
+  gap: 20px;
+}
+
+.floor-plan-controls button {
+  margin: 0 5px;
+  padding: 5px 10px;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.floor-plan-controls button:hover {
+  background-color: #3a7bc8;
+}
+
+.grid-info, .scale-info, .selected-info, .area-info {
+  font-size: 14px;
+  color: #666;
+  background-color: #f0f0f0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.selected-info {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+  color: #0050b3;
+}
+
+.area-info {
+  background-color: #f6ffed;
+  border-color: #b7eb8f;
+  color: #52c41a;
+}
+
+.form-help {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: #777;
+}
+
+/* Floor Plan Toolbar */
+.floor-plan-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0.5rem;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Modal styles for new project dialog */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  max-width: 400px;
+  width: 100%;
+}
+
+.modal-content h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 18px;
+  color: #333;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #555;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.form-actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.form-actions button:first-child {
+  background-color: #4a90e2;
   color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.form-actions button:last-child {
+  background-color: #e2e2e2;
+  color: #333;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.form-actions button:hover {
+  opacity: 0.9;
 }
