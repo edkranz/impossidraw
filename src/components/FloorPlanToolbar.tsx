@@ -11,6 +11,8 @@ interface FloorPlanToolbarProps {
   floorPlan: FloorPlan;
   importFloorPlan: (floorPlan: FloorPlan) => void;
   triggerFileInput?: boolean;
+  toggleInspector: () => void;
+  isInspectorVisible: boolean;
 }
 
 const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
@@ -22,7 +24,9 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
   canRedo,
   floorPlan,
   importFloorPlan,
-  triggerFileInput
+  triggerFileInput,
+  toggleInspector,
+  isInspectorVisible
 }) => {
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [gridSizeWidth, setGridSizeWidth] = useState(100); // Default 100mm (10cm) grid width
@@ -141,12 +145,21 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
         </button>
       </div>
       
+      <button 
+        onClick={toggleInspector}
+        className="toolbar-button inspector-toggle-icon" 
+        title={isInspectorVisible ? "Hide Inspector" : "Show Inspector"}
+        style={{ marginLeft: 'auto' }}
+      >
+        ℹ️
+      </button>
+      
       {showNewProjectDialog && (
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Create New Project</h3>
             <div className="form-group">
-              <label>Grid Cell Width (mm):</label>
+              <label>Maximum Room Width (X) (mm):</label>
               <input 
                 type="number" 
                 value={gridSizeWidth} 
@@ -154,10 +167,11 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
                 min="10" 
                 max="1000"
                 step="10"
+                title="Sets the width of each grid cell. Rooms can only be 1 cell wide. Range: 10mm to 1000mm"
               />
             </div>
             <div className="form-group">
-              <label>Grid Cell Height (mm):</label>
+              <label>Maximum Room Length (Y) (mm):</label>
               <input 
                 type="number" 
                 value={gridSizeHeight} 
@@ -165,6 +179,7 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
                 min="10" 
                 max="1000"
                 step="10"
+                title="Sets the height of each grid cell. Rooms can only be 1 cell tall. Range: 10mm to 1000mm"
               />
               <small className="form-help">Common values: 100mm (10cm), 250mm (25cm), 500mm (50cm), 1000mm (1m)</small>
               <small className="form-help">Room sizes are limited to one grid cell each</small>

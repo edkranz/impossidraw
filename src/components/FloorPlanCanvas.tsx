@@ -13,6 +13,8 @@ interface FloorPlanCanvasProps {
   floorPlan: FloorPlan;
   setFloorPlan: React.Dispatch<React.SetStateAction<FloorPlan>>;
   addToHistory: (floorPlan: FloorPlan) => void;
+  selectedRoom: RoomType | null;
+  setSelectedRoom: React.Dispatch<React.SetStateAction<RoomType | null>>;
 }
 
 const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({ 
@@ -20,7 +22,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   height, 
   floorPlan, 
   setFloorPlan, 
-  addToHistory 
+  addToHistory,
+  selectedRoom,
+  setSelectedRoom
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [connectingPortals, setConnectingPortals] = useState<{ roomId: string, portalId: string } | null>(null);
@@ -32,6 +36,19 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   const [previewRoomPosition, setPreviewRoomPosition] = useState({ gridX: 0, gridY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Calculate min and max zoom limits based on grid size
+  const getZoomLimits = () => {
+    // Minimum scale ensures grid cells don't become too small (prevents crashes when zoomed out too far)
+    // Base it on grid size - smaller grid = lower minimum zoom
+    const minScale = Math.max(0.01, 30 / Math.max(floorPlan.gridSizeWidth, floorPlan.gridSizeHeight));
+    
+    // Maximum scale prevents grid cells from becoming too large
+    // Base it on grid size - larger grid = higher maximum zoom
+    const maxScale = Math.min(50, 5000 / Math.min(floorPlan.gridSizeWidth, floorPlan.gridSizeHeight));
+    
+    return { minScale, maxScale };
+  };
+
   // Initialize canvas position to center
   useEffect(() => {
     setPosition({ x: width / 2, y: height / 2 });
@@ -64,6 +81,16 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       if (isPlacingRoom && e.key === 'Escape') {
         setIsPlacingRoom(false);
       }
+      
+      // Add room shortcut - 'n' key
+      if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Only trigger if not typing in an input field
+        if (!(e.target instanceof HTMLInputElement) && 
+            !(e.target instanceof HTMLTextAreaElement)) {
+          e.preventDefault();
+          addRoom();
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -86,38 +113,53 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   useGesture(
     {
       // Handle pinch to zoom
-      onPinch: ({ origin: [ox, oy], first, movement: [ms], offset: [scale], memo }) => {
+      onPinch: ({ origin: [ox, oy], first, movement: [ms], offset: [s], delta: [ds], memo }) => {
         if (isDraggingRoom) return;
         
-        if (first) {
-          // Get the position of the stage container
-          const stage = stageRef.current;
-          if (!stage) return;
-          
-          const stageRect = stage.container().getBoundingClientRect();
-          
-          // Calculate the point under the pinch in stage coordinates
-          const x = ox - stageRect.left;
-          const y = oy - stageRect.top;
-          
-          // Store the point in scene coordinates (accounting for current pan and zoom)
-          memo = {
-            x: (x - position.x) / scale,
-            y: (y - position.y) / scale
-          };
+        // Ensure we're working with valid numbers
+        const validDs = isNaN(ds) ? 0 : ds;
+        
+        // Calculate zoom limits
+        const { minScale, maxScale } = getZoomLimits();
+        
+        // Using geometric progression for smooth zooming
+        // For a small change ds, we want to advance proportionally on a logarithmic scale
+        // This ensures that each zoom step "feels" the same regardless of the current zoom level
+        const zoomFactor = Math.exp(validDs * 0.5); // 0.5 is a sensitivity factor
+        const newScale = scale * zoomFactor;
+        
+        // Apply zoom limits
+        const clampedScale = Math.min(Math.max(newScale, minScale), maxScale);
+        
+        // Prevent extremely small scales that can cause NaN issues
+        if (clampedScale < 0.0001 || !isFinite(clampedScale)) {
+          return;
         }
         
-        // Limit min/max scale
-        const newScale = Math.max(0.1, Math.min(5, scale));
+        const stage = stageRef.current;
+        if (!stage) return;
         
-        // Calculate new position to zoom toward pinch point
-        const newPos = {
-          x: ox - memo.x * newScale,
-          y: oy - memo.y * newScale
-        };
+        // Get stage dimensions
+        const stageRect = stage.container().getBoundingClientRect();
         
-        setScale(newScale);
-        setPosition(newPos);
+        // Get pointer position relative to stage
+        const pointerX = ox - stageRect.left;
+        const pointerY = oy - stageRect.top;
+        
+        // Get pointer position in world coordinates
+        const worldX = (pointerX - position.x) / scale;
+        const worldY = (pointerY - position.y) / scale;
+        
+        // Calculate new position that keeps the point under the pointer in the same world position
+        let newX = pointerX - worldX * clampedScale;
+        let newY = pointerY - worldY * clampedScale;
+        
+        // Guard against NaN values
+        if (isNaN(newX) || !isFinite(newX)) newX = position.x;
+        if (isNaN(newY) || !isFinite(newY)) newY = position.y;
+        
+        setScale(clampedScale);
+        setPosition({ x: newX, y: newY });
         
         return memo;
       },
@@ -155,21 +197,42 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           y: (pointer.y - position.y) / oldScale,
         };
         
-        // Calculate new scale
-        const zoomFactor = 1.1;
-        const newScale = dy > 0 ? oldScale / zoomFactor : oldScale * zoomFactor;
+        // Calculate zoom limits
+        const { minScale, maxScale } = getZoomLimits();
         
-        // Limit min/max scale
-        const limitedScale = Math.max(0.1, Math.min(5, newScale));
+        // Using geometric progression for smooth zooming
+        // For a fixed zoom-in/out step, we want a constant multiplication factor
+        // This ensures that each zoom step "feels" the same regardless of the current zoom level
+        const wheelZoomSensitivity = 0.2; // Controls how much zoom per wheel click
         
-        // Calculate new position - keeps zoom centered on mouse pointer
-        const newPos = {
-          x: pointer.x - mousePointTo.x * limitedScale,
-          y: pointer.y - mousePointTo.y * limitedScale,
-        };
+        // For zooming in/out with wheel, we use a fixed multiplicative factor
+        // This gives consistent zoom feel regardless of current zoom level
+        const zoomInFactor = Math.exp(wheelZoomSensitivity);
+        const zoomOutFactor = Math.exp(-wheelZoomSensitivity);
         
-        setScale(limitedScale);
-        setPosition(newPos);
+        // Apply the appropriate factor
+        const newScale = dy > 0 
+          ? oldScale * zoomOutFactor  // Zoom out
+          : oldScale * zoomInFactor;  // Zoom in
+        
+        // Apply zoom limits
+        const clampedScale = Math.min(Math.max(newScale, minScale), maxScale);
+        
+        // Prevent extremely small scales that can cause NaN issues
+        if (clampedScale < 0.0001 || !isFinite(clampedScale)) {
+          return;
+        }
+        
+        // Calculate new position that keeps zoom centered on mouse pointer
+        let newX = pointer.x - mousePointTo.x * clampedScale;
+        let newY = pointer.y - mousePointTo.y * clampedScale;
+        
+        // Guard against NaN values
+        if (isNaN(newX) || !isFinite(newX)) newX = position.x;
+        if (isNaN(newY) || !isFinite(newY)) newY = position.y;
+        
+        setScale(clampedScale);
+        setPosition({ x: newX, y: newY });
       }
     },
     {
@@ -177,11 +240,27 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       eventOptions: { passive: false },
       pinch: {
         distanceBounds: { min: 0 },
-        scaleBounds: { min: 0.1, max: 5 },
         rubberband: true
       }
     }
   );
+
+  // Sync selectedId with the selectedRoom from props
+  useEffect(() => {
+    if (selectedId) {
+      const room = floorPlan.rooms.find(room => room.id === selectedId);
+      setSelectedRoom(room || null);
+    } else {
+      setSelectedRoom(null);
+    }
+  }, [selectedId, floorPlan.rooms, setSelectedRoom]);
+
+  // If selectedRoom changes externally, update selectedId
+  useEffect(() => {
+    if (selectedRoom) {
+      setSelectedId(selectedRoom.id);
+    }
+  }, [selectedRoom]);
 
   // Handle room mouse events
   const handleSelect = (id: string) => {
@@ -210,17 +289,17 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   };
 
   const handleRoomDragEnd = (e: Konva.KonvaEventObject<DragEvent>, roomId: string) => {
-    const room = floorPlan.rooms.find(r => r.id === roomId);
-    if (!room) return;
-    
     // Reset the dragging flag
     setIsDraggingRoom(false);
+    
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
     
     // Get the new position of the room after dragging
     const newX = e.target.x();
     const newY = e.target.y();
     
-    // Calculate new grid position
+    // Calculate new grid position - ensure exact grid alignment
     const newGridX = Math.round(newX / floorPlan.gridSizeWidth);
     const newGridY = Math.round(newY / floorPlan.gridSizeHeight);
     
@@ -228,17 +307,24 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const snappedX = newGridX * floorPlan.gridSizeWidth;
     const snappedY = newGridY * floorPlan.gridSizeHeight;
     
+    // Skip updates if the room hasn't actually changed position
+    if (room.gridX === newGridX && room.gridY === newGridY) {
+      return;
+    }
+    
     // Check if there's already a room at this new grid position (excluding the current room)
     const isOccupied = floorPlan.rooms.some(
       r => r.id !== roomId && r.gridX === newGridX && r.gridY === newGridY
     );
     
     if (isOccupied) {
-      // If occupied, revert to original position
-      e.target.position({
-        x: room.x,
-        y: room.y
-      });
+      // If occupied, revert to original position without triggering a new state update
+      if (typeof e.target.position === 'function') {
+        e.target.position({
+          x: room.x,
+          y: room.y
+        });
+      }
       return;
     }
     
@@ -412,6 +498,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   };
 
   const deleteRoom = (roomId: string) => {
+    // Clear the selected room if we're deleting it
+    if (selectedId === roomId) {
+      setSelectedId(null);
+    }
+    
     // Find all portals that connect to this room
     const portalConnections: {roomId: string, portalId: string}[] = [];
     
@@ -619,33 +710,45 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const lines = [];
     
     // Calculate the visible area in grid coordinates
-    const leftEdge = Math.floor(-position.x / scale / gridSizeWidth) * gridSizeWidth - gridSizeWidth;
-    const topEdge = Math.floor(-position.y / scale / gridSizeHeight) * gridSizeHeight - gridSizeHeight;
-    const rightEdge = Math.ceil((width - position.x) / scale / gridSizeWidth) * gridSizeWidth + gridSizeWidth;
-    const bottomEdge = Math.ceil((height - position.y) / scale / gridSizeHeight) * gridSizeHeight + gridSizeHeight;
+    // Guard against extreme scale values that could cause NaN
+    const safeScale = Math.max(0.0001, scale);
     
-    // Vertical lines
-    for (let x = leftEdge; x <= rightEdge; x += gridSizeWidth) {
-      lines.push(
-        <Line
-          key={`v-${x}`}
-          points={[x, topEdge, x, bottomEdge]}
-          stroke="#ddd"
-          strokeWidth={1 / scale}
-        />
-      );
-    }
+    const leftEdge = Math.floor(-position.x / safeScale / gridSizeWidth) * gridSizeWidth - gridSizeWidth;
+    const topEdge = Math.floor(-position.y / safeScale / gridSizeHeight) * gridSizeHeight - gridSizeHeight;
+    const rightEdge = Math.ceil((width - position.x) / safeScale / gridSizeWidth) * gridSizeWidth + gridSizeWidth;
+    const bottomEdge = Math.ceil((height - position.y) / safeScale / gridSizeHeight) * gridSizeHeight + gridSizeHeight;
     
-    // Horizontal lines
-    for (let y = topEdge; y <= bottomEdge; y += gridSizeHeight) {
-      lines.push(
-        <Line
-          key={`h-${y}`}
-          points={[leftEdge, y, rightEdge, y]}
-          stroke="#ddd"
-          strokeWidth={1 / scale}
-        />
-      );
+    // Safety check to prevent too many grid lines at extreme zoom levels
+    const gridLineLimit = 1000;
+    const hLineCount = Math.min(Math.ceil((bottomEdge - topEdge) / gridSizeHeight), gridLineLimit);
+    const vLineCount = Math.min(Math.ceil((rightEdge - leftEdge) / gridSizeWidth), gridLineLimit);
+    
+    if (hLineCount > 0 && vLineCount > 0 && isFinite(hLineCount) && isFinite(vLineCount)) {
+      // Vertical lines
+      for (let x = leftEdge; x <= rightEdge; x += gridSizeWidth) {
+        if (!isFinite(x)) continue;
+        lines.push(
+          <Line
+            key={`v-${x}`}
+            points={[x, topEdge, x, bottomEdge]}
+            stroke="#ddd"
+            strokeWidth={1 / safeScale}
+          />
+        );
+      }
+      
+      // Horizontal lines
+      for (let y = topEdge; y <= bottomEdge; y += gridSizeHeight) {
+        if (!isFinite(y)) continue;
+        lines.push(
+          <Line
+            key={`h-${y}`}
+            points={[leftEdge, y, rightEdge, y]}
+            stroke="#ddd"
+            strokeWidth={1 / safeScale}
+          />
+        );
+      }
     }
     
     return lines;
@@ -722,9 +825,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       }}
     >
       <div className="floor-plan-controls">
-        <button onClick={addRoom}>{isPlacingRoom ? "Cancel Room" : "Add Room"}</button>
+        <button onClick={addRoom}>{isPlacingRoom ? "Cancel Room" : "Add Room (n)"}</button>
         <span className="grid-info">Grid: {floorPlan.gridSizeWidth}×{floorPlan.gridSizeHeight}mm</span>
-        <span className="scale-info">Scale: {Math.round(scale * 100)}%</span>
+        <span className="scale-info">Scale: {(scale * 100).toFixed(0)}% ({(floorPlan.gridSizeWidth * scale).toFixed(1)}mm/cell)</span>
         {selectedId && <span className="selected-info">Room selected: {floorPlan.rooms.find(r => r.id === selectedId)?.name}</span>}
         {isPlacingRoom && <span className="placement-info">Click to place room</span>}
       </div>

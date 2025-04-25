@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Rect, Group, Text, Line } from 'react-konva';
 import Konva from 'konva';
 import { Room as RoomType, Portal as PortalType } from '../../types/Room';
@@ -32,6 +32,7 @@ const Room: React.FC<RoomProps> = ({
   const trRef = React.useRef<Konva.Transformer>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const dragStartPositionRef = useRef({ x: 0, y: 0 });
 
   const { id, x, y, width, height, name, color, portals, gridX, gridY } = room;
 
@@ -43,6 +44,17 @@ const Room: React.FC<RoomProps> = ({
   const snapToGridY = (value: number): number => {
     return Math.round(value / gridSizeHeight) * gridSizeHeight;
   };
+
+  // Effect to update position when component props change
+  useEffect(() => {
+    if (shapeRef.current) {
+      // Ensure the shape is exactly at the grid position specified
+      shapeRef.current.position({
+        x: x,
+        y: y
+      });
+    }
+  }, [x, y]);
 
   React.useEffect(() => {
     if (isSelected && trRef.current && shapeRef.current) {
@@ -64,28 +76,26 @@ const Room: React.FC<RoomProps> = ({
     return `Cell: ${gridX},${gridY}`;
   };
 
-  // Handle drag move to show visual feedback
+  // Handle drag move with improved behavior
   const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
-    // Update drag position for visual feedback
+    // Get raw position from cursor
+    const rawX = e.target.x();
+    const rawY = e.target.y();
+    
+    // Calculate the snapped grid position for preview only
+    const snappedGridX = Math.round(rawX / gridSizeWidth);
+    const snappedGridY = Math.round(rawY / gridSizeHeight);
+    const snappedX = snappedGridX * gridSizeWidth;
+    const snappedY = snappedGridY * gridSizeHeight;
+    
+    // Update the preview position to show the snapped destination
     setDragPosition({
-      x: e.target.x(),
-      y: e.target.y()
+      x: snappedX,
+      y: snappedY
     });
     
-    // If shape is available, modify position during drag to visually snap to grid
-    if (shapeRef.current) {
-      const snapX = snapToGridX(e.target.x());
-      const snapY = snapToGridY(e.target.y());
-      
-      // Apply a visual hint by moving the shape partially toward the snap point
-      const visualX = e.target.x() + (snapX - e.target.x()) * 0.2;
-      const visualY = e.target.y() + (snapY - e.target.y()) * 0.2;
-      
-      shapeRef.current.position({
-        x: visualX,
-        y: visualY
-      });
-    }
+    // Let the object follow the cursor naturally - no snapping during drag
+    // The shape's position is already being updated by Konva drag behavior
   };
 
   // Function to render portals
@@ -184,22 +194,45 @@ const Room: React.FC<RoomProps> = ({
   const renderGridPreview = () => {
     if (!isDragging) return null;
     
-    const previewGridX = Math.round(dragPosition.x / gridSizeWidth);
-    const previewGridY = Math.round(dragPosition.y / gridSizeHeight);
-    const previewX = previewGridX * gridSizeWidth;
-    const previewY = previewGridY * gridSizeHeight;
+    // Use the calculated dragging position for the preview
+    const previewX = dragPosition.x;
+    const previewY = dragPosition.y;
     
+    // Check if the dragged room is at the same position as the preview
+    const currentPosX = shapeRef.current?.x() || x;
+    const currentPosY = shapeRef.current?.y() || y;
+    const snappedCurrentX = snapToGridX(currentPosX);
+    const snappedCurrentY = snapToGridY(currentPosY);
+    
+    // Determine if the preview is at a different position than current 
+    const isPreviewDifferent = previewX !== snappedCurrentX || previewY !== snappedCurrentY;
+    
+    // Render a more prominent preview when it's at a different position
     return (
-      <Rect
-        x={previewX}
-        y={previewY}
-        width={gridSizeWidth}
-        height={gridSizeHeight}
-        stroke="#1890ff"
-        strokeWidth={2}
-        dash={[5, 5]}
-        fill="rgba(24, 144, 255, 0.1)"
-      />
+      <Group>
+        {/* Semi-transparent destination outline */}
+        <Rect
+          x={previewX}
+          y={previewY}
+          width={gridSizeWidth}
+          height={gridSizeHeight}
+          stroke={isPreviewDifferent ? '#1890ff' : 'rgba(24, 144, 255, 0.5)'}
+          strokeWidth={2}
+          dash={[5, 5]}
+          fill={isPreviewDifferent ? 'rgba(24, 144, 255, 0.2)' : 'rgba(24, 144, 255, 0.1)'}
+        />
+        
+        {/* Grid coordinates label */}
+        {isPreviewDifferent && (
+          <Text
+            text={`Cell: ${Math.round(previewX / gridSizeWidth)},${Math.round(previewY / gridSizeHeight)}`}
+            x={previewX + 5}
+            y={previewY + gridSizeHeight - 20}
+            fontSize={12}
+            fill="#1890ff"
+          />
+        )}
+      </Group>
     );
   };
 
@@ -228,9 +261,21 @@ const Room: React.FC<RoomProps> = ({
         strokeEnabled={true}
         perfectDrawEnabled={true}
         lineJoin="miter"
-        onDragStart={() => {
+        onDragStart={(e) => {
           setIsDragging(true);
-          setDragPosition({ x, y });
+          
+          // Store initial position for reference
+          dragStartPositionRef.current = { 
+            x: e.target.x(), 
+            y: e.target.y() 
+          };
+          
+          // Initialize the drag position at the current position
+          setDragPosition({ 
+            x: snapToGridX(e.target.x()), 
+            y: snapToGridY(e.target.y()) 
+          });
+          
           if (onDragStart) {
             onDragStart();
           }
@@ -238,10 +283,23 @@ const Room: React.FC<RoomProps> = ({
         onDragMove={handleDragMove}
         onDragEnd={(e) => {
           setIsDragging(false);
-          // Snap to grid cell
-          const newX = snapToGridX(e.target.x());
-          const newY = snapToGridY(e.target.y());
-          onPositionChange(id, newX, newY);
+          
+          // Always snap to grid on end
+          const snappedX = snapToGridX(e.target.x());
+          const snappedY = snapToGridY(e.target.y());
+          
+          // Make sure position is exactly on grid
+          if (shapeRef.current) {
+            shapeRef.current.position({
+              x: snappedX,
+              y: snappedY
+            });
+          }
+          
+          // Only notify of position change if actually moved
+          if (snappedX !== x || snappedY !== y) {
+            onPositionChange(id, snappedX, snappedY);
+          }
           
           // Call the optional onDragEnd callback
           if (onDragEnd) {
@@ -274,27 +332,27 @@ const Room: React.FC<RoomProps> = ({
       {/* Room name */}
       <Text
         text={name}
-        x={x + 5}
-        y={y + 5}
-        fontSize={14}
+        x={x + width * 0.02}
+        y={y + height * 0.02}
+        fontSize={Math.min(width, height) * 0.1}
         fill="black"
       />
       
       {/* Room dimensions */}
       <Text
         text={getDisplayDimensions()}
-        x={x + 5}
-        y={y + 25}
-        fontSize={12}
+        x={x + width * 0.02}
+        y={y + height * 0.02 + Math.min(width, height) * 0.1 + 5}
+        fontSize={Math.min(width, height) * 0.05}
         fill="#555"
       />
       
       {/* Grid position */}
       <Text
         text={getGridPosition()}
-        x={x + 5}
-        y={y + 45}
-        fontSize={12}
+        x={x + width * 0.02}
+        y={y + height * 0.02 + Math.min(width, height) * 0.15 + 10}
+        fontSize={Math.min(width, height) * 0.05}
         fill="#777"
       />
       

@@ -121,6 +121,18 @@
   flex-direction: column;
   flex: 1;
   position: relative;
+  height: calc(100vh - 120px);
+  overflow: hidden;
+}
+
+/* Main canvas area takes full width */
+.canvas-main-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+  width: 100%;
 }
 
 /* Drawing Toolbar */
@@ -216,11 +228,13 @@
   align-self: center;
 }
 
+/* Adjust the FloorPlanCanvas container to take full height of its parent */
 .floor-plan-canvas-container {
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
+  flex: 1;
 }
 
 .floor-plan-controls {
@@ -275,6 +289,13 @@
   margin-top: 5px;
   font-size: 12px;
   color: #777;
+  max-width: 100%;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+  white-space: normal;
+  box-sizing: border-box;
 }
 
 /* Floor Plan Toolbar */
@@ -304,11 +325,12 @@
 
 .modal-content {
   background-color: white;
-  padding: 20px;
+  padding: 20px 24px;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   max-width: 400px;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .modal-content h3 {
@@ -320,6 +342,7 @@
 
 .form-group {
   margin-bottom: 16px;
+  width: 100%;
 }
 
 .form-group label {
@@ -335,6 +358,7 @@
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
+  box-sizing: border-box;
 }
 
 .form-actions {
@@ -359,6 +383,141 @@
 
 .form-actions button:last-child {
   background-color: #e2e2e2;
+  color: #333;
+}
+
+.form-actions button:hover {
+  opacity: 0.9;
+}
+
+/* Style the room inspector sidebar */
+.room-inspector {
+  width: 300px;
+  background-color: #f8f8f8;
+  border-left: 1px solid #ddd;
+  padding: 1rem;
+  overflow-y: auto;
+  height: 100%;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.room-inspector.hidden {
+  transform: translateX(300px);
+}
+
+/* Inspector toggle button */
+.inspector-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  z-index: 110;
+}
+
+/* Hide the original toggle when inspector is hidden */
+.room-inspector.hidden .inspector-toggle {
+  display: none;
+}
+
+/* Separate toggle button that appears in the controls when inspector is hidden */
+.floor-plan-controls .inspector-toggle {
+  position: static;
+  margin-left: auto;
+}
+
+.room-inspector h2 {
+  margin-top: 0;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.5rem;
+  font-size: 1.2rem;
+}
+
+.inspector-field {
+  margin-bottom: 1rem;
+}
+
+.inspector-field label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.inspector-field input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+/* Add an icon for the inspector toggle */
+.inspector-toggle-icon {
+  font-size: 16px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Welcome Modal styles */
+.welcome-modal {
+  text-align: center;
+}
+
+.welcome-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.welcome-button {
+  padding: 12px 24px;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.welcome-button:hover {
+  background-color: #3a7bc8;
+}
+
+/* Modal actions */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.form-actions button {
+  padding: 8px 16px;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.form-actions button:last-child {
+  background-color: #f0f0f0;
   color: #333;
 }
 

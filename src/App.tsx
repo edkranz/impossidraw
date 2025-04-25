@@ -3,23 +3,33 @@ import './App.css';
 import FloorPlanCanvas from './components/FloorPlanCanvas';
 import FloorPlanToolbar from './components/FloorPlanToolbar';
 import Navbar from './components/Navbar';
-import { FloorPlan } from './types/Room';
+import RoomInspector from './components/RoomInspector';
+import { FloorPlan, Room } from './types/Room';
 
 function App() {
   // Canvas viewport dimensions - just for the visible area
   const [canvasSize, setCanvasSize] = useState({
-    width: window.innerWidth - 40,
+    width: window.innerWidth - 40, // Only subtract padding, inspector now floats
     height: window.innerHeight - 120
   });
 
   // For file import - used to trigger click on the hidden file input
   const [triggerFileInput, setTriggerFileInput] = useState(false);
+  
+  // Selected room for the inspector
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  
+  // Inspector visibility
+  const [isInspectorVisible, setIsInspectorVisible] = useState(true);
+
+  // Welcome modal visibility
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
 
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
       setCanvasSize({
-        width: window.innerWidth - 40,
+        width: window.innerWidth - 40, // Only subtract padding, inspector now floats
         height: window.innerHeight - 120
       });
     };
@@ -30,6 +40,19 @@ function App() {
       window.removeEventListener('resize', handleResize);
     };
   }, []);
+
+  // Update canvas size when inspector visibility changes
+  useEffect(() => {
+    setCanvasSize({
+      width: window.innerWidth - 40, // Only subtract padding, inspector now floats
+      height: window.innerHeight - 120
+    });
+  }, [isInspectorVisible]);
+
+  // Toggle inspector visibility
+  const toggleInspector = () => {
+    setIsInspectorVisible(prev => !prev);
+  };
 
   // Initialize with a default floor plan
   // Grid cell size determines the maximum room size
@@ -129,6 +152,7 @@ function App() {
     };
     setFloorPlan(newFloorPlan);
     addToHistory(newFloorPlan);
+    setShowWelcomeModal(false);
   };
 
   // Import a floor plan from JSON
@@ -146,6 +170,7 @@ function App() {
     
     setFloorPlan(newFloorPlan);
     addToHistory(newFloorPlan);
+    setShowWelcomeModal(false);
   };
 
   // Handler for export from navbar
@@ -164,6 +189,7 @@ function App() {
   // Handler for import from navbar
   const handleImport = () => {
     setTriggerFileInput(true);
+    setShowWelcomeModal(false);
   };
 
   // Reset trigger after it's been used
@@ -172,6 +198,25 @@ function App() {
       setTriggerFileInput(false);
     }
   }, [triggerFileInput]);
+
+  // Handle room update from the inspector
+  const handleUpdateRoom = (updatedRoom: Room) => {
+    setFloorPlan(prevFloorPlan => {
+      const updatedRooms = prevFloorPlan.rooms.map(room => 
+        room.id === updatedRoom.id ? updatedRoom : room
+      );
+      
+      const updatedFloorPlan = {
+        ...prevFloorPlan,
+        rooms: updatedRooms
+      };
+      
+      // Add to history
+      addToHistory(updatedFloorPlan);
+      
+      return updatedFloorPlan;
+    });
+  };
 
   return (
     <div className="App">
@@ -185,25 +230,67 @@ function App() {
         onImport={handleImport}
       />
       <div className="canvas-container">
-        <FloorPlanToolbar 
-          onNewProject={createNewProject}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onClear={clearAll}
-          canUndo={historyIndex > 0}
-          canRedo={historyIndex < history.length - 1}
-          floorPlan={floorPlan}
-          importFloorPlan={importFloorPlan}
-          triggerFileInput={triggerFileInput}
-        />
-        <FloorPlanCanvas 
-          width={canvasSize.width} 
-          height={canvasSize.height}
-          floorPlan={floorPlan}
-          setFloorPlan={setFloorPlan}
-          addToHistory={addToHistory}
-        />
+        <div className="canvas-main-area">
+          <FloorPlanToolbar 
+            onNewProject={createNewProject}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onClear={clearAll}
+            canUndo={historyIndex > 0}
+            canRedo={historyIndex < history.length - 1}
+            floorPlan={floorPlan}
+            importFloorPlan={importFloorPlan}
+            triggerFileInput={triggerFileInput}
+            toggleInspector={toggleInspector}
+            isInspectorVisible={isInspectorVisible}
+          />
+          <FloorPlanCanvas 
+            width={canvasSize.width} 
+            height={canvasSize.height}
+            floorPlan={floorPlan}
+            setFloorPlan={setFloorPlan}
+            addToHistory={addToHistory}
+            selectedRoom={selectedRoom}
+            setSelectedRoom={setSelectedRoom}
+          />
+        </div>
+        {isInspectorVisible && selectedRoom && (
+          <RoomInspector 
+            selectedRoom={selectedRoom} 
+            onUpdateRoom={handleUpdateRoom}
+            isVisible={isInspectorVisible}
+            toggleVisibility={toggleInspector}
+          />
+        )}
       </div>
+
+      {/* Welcome Modal */}
+      {showWelcomeModal && (
+        <div className="modal-overlay">
+          <div className="modal-content welcome-modal">
+            <h3>Welcome to Impossidraw!</h3>
+            <p>Choose an option to get started:</p>
+            <div className="welcome-buttons">
+              <button 
+                onClick={() => {
+                  setShowWelcomeModal(false);
+                  const toolbar = document.querySelector('.floor-plan-toolbar button');
+                  (toolbar as HTMLElement)?.click();
+                }}
+                className="welcome-button"
+              >
+                New Project
+              </button>
+              <button 
+                onClick={handleImport}
+                className="welcome-button"
+              >
+                Import Project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
