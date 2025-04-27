@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Group, Line, Rect } from 'react-konva';
-import { Room as RoomType, Portal as PortalType, FloorPlan } from '../types/Room';
+import { Room as RoomType, Portal as PortalType, FloorPlan, Wall as WallType } from '../types/Room';
 import Room from './shapes/Room';
 import { v4 as uuidv4 } from 'uuid';
 import Konva from 'konva';
@@ -15,6 +15,8 @@ interface FloorPlanCanvasProps {
   addToHistory: (floorPlan: FloorPlan) => void;
   selectedRoom: RoomType | null;
   setSelectedRoom: React.Dispatch<React.SetStateAction<RoomType | null>>;
+  isWallPlacementActive?: boolean;
+  setIsWallPlacementActive?: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({ 
@@ -24,7 +26,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   setFloorPlan, 
   addToHistory,
   selectedRoom,
-  setSelectedRoom
+  setSelectedRoom,
+  isWallPlacementActive = false,
+  setIsWallPlacementActive
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [connectingPortals, setConnectingPortals] = useState<{ roomId: string, portalId: string } | null>(null);
@@ -36,6 +40,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   const [previewRoomPosition, setPreviewRoomPosition] = useState({ gridX: 0, gridY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Wall drawing state
+  const [isDrawingWall, setIsDrawingWall] = useState(false);
+  const [wallStartPoint, setWallStartPoint] = useState<{ x: number, y: number, roomId: string } | null>(null);
+  const [wallPreview, setWallPreview] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
+
   // Calculate min and max zoom limits based on grid size
   const getZoomLimits = () => {
     // Minimum scale ensures grid cells don't become too small (prevents crashes when zoomed out too far)
@@ -269,6 +278,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       setIsPlacingRoom(false);
     }
     
+    // If selecting a different room while in wall placement mode, disable wall placement
+    if (isWallPlacementActive && selectedId !== id && setIsWallPlacementActive) {
+      setIsWallPlacementActive(false);
+    }
+    
     setSelectedId(id);
   };
 
@@ -278,6 +292,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     if (clickedOnEmpty) {
       setSelectedId(null);
       setConnectingPortals(null);
+      
+      // If wall placement is active, deactivate it
+      if (isWallPlacementActive && setIsWallPlacementActive) {
+        setIsWallPlacementActive(false);
+      }
       
       // Room placement is now handled by handleCanvasClick
     }
@@ -470,6 +489,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       name: `Room ${floorPlan.rooms.length + 1}`,
       color: getRandomColor(0.2),
       portals: [],
+      walls: [],
       gridX,
       gridY
     };
@@ -657,52 +677,213 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setConnectingPortals(null);
   };
 
-  const handleCanvasMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    // Update preview room position when in placement mode
-    if (isPlacingRoom) {
-      const stage = stageRef.current;
-      if (!stage) return;
-      
-      const pointerPos = stage.getPointerPosition();
-      if (!pointerPos) return;
-      
-      // Convert screen coordinates to world coordinates
-      const worldX = (pointerPos.x - position.x) / scale;
-      const worldY = (pointerPos.y - position.y) / scale;
-      
-      // Calculate grid position
-      const gridX = Math.floor(worldX / floorPlan.gridSizeWidth);
-      const gridY = Math.floor(worldY / floorPlan.gridSizeHeight);
-      
-      setPreviewRoomPosition({ gridX, gridY });
+  // Toggle wall placement mode
+  const toggleWallPlacement = () => {
+    if (setIsWallPlacementActive) {
+      setIsWallPlacementActive(!isWallPlacementActive);
+      // Cancel room placement if active
+      if (isPlacingRoom) {
+        setIsPlacingRoom(false);
+      }
     }
   };
 
-  // Add a dedicated function to handle canvas clicks during room placement
+  // Add a wall to a room
+  const addWallToRoom = (roomId: string, startX: number, startY: number, endX: number, endY: number) => {
+    const wallId = `wall-${uuidv4()}`;
+    
+    const updatedRooms = floorPlan.rooms.map(room => {
+      if (room.id === roomId) {
+        return {
+          ...room,
+          walls: [
+            ...room.walls,
+            {
+              id: wallId,
+              startX,
+              startY,
+              endX,
+              endY
+            }
+          ]
+        };
+      }
+      return room;
+    });
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+  };
+
+  // Wall drawing handlers
+  const handleWallDrawingStart = (roomId: string, x: number, y: number) => {
+    if (!isWallPlacementActive) return;
+    
+    // Only allow wall drawing in the selected room
+    if (selectedId !== roomId) return;
+    
+    // Find the room in global coordinates
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Convert global coordinates to room-local coordinates
+    const localX = x - room.x;
+    const localY = y - room.y;
+    
+    // Ensure the point is within room bounds
+    if (localX < 0 || localX > room.width || localY < 0 || localY > room.height) return;
+    
+    setIsDrawingWall(true);
+    setWallStartPoint({ x: localX, y: localY, roomId });
+    setWallPreview({ startX: localX, startY: localY, endX: localX, endY: localY });
+  };
+  
+  const handleWallDrawingMove = (x: number, y: number) => {
+    if (!isDrawingWall || !wallStartPoint) return;
+    
+    // Find the room
+    const room = floorPlan.rooms.find(r => r.id === wallStartPoint.roomId);
+    if (!room) return;
+    
+    // Convert global coordinates to room-local coordinates
+    const localX = Math.max(0, Math.min(room.width, x - room.x));
+    const localY = Math.max(0, Math.min(room.height, y - room.y));
+    
+    // Update wall preview
+    setWallPreview({
+      startX: wallStartPoint.x,
+      startY: wallStartPoint.y,
+      endX: localX,
+      endY: localY
+    });
+  };
+  
+  const handleWallDrawingEnd = () => {
+    if (!isDrawingWall || !wallStartPoint || !wallPreview) return;
+    
+    // Check if wall has a minimum length (to prevent accidental clicks)
+    const dx = wallPreview.endX - wallPreview.startX;
+    const dy = wallPreview.endY - wallPreview.startY;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    
+    if (length > 10) { // Minimum 10px length
+      addWallToRoom(
+        wallStartPoint.roomId,
+        wallPreview.startX,
+        wallPreview.startY,
+        wallPreview.endX,
+        wallPreview.endY
+      );
+    }
+    
+    // Reset wall drawing state
+    setIsDrawingWall(false);
+    setWallStartPoint(null);
+    setWallPreview(null);
+  };
+
+  // Update canvas event handlers to handle wall drawing
   const handleCanvasClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    // Only handle clicks when in placement mode
-    if (!isPlacingRoom) return;
+    const stage = stageRef.current;
+    if (!stage) return;
     
-    // Skip if not clicking on the stage itself (e.g. clicking on another shape)
-    if (e.target !== e.target.getStage()) return;
+    // Get pointer position in canvas coordinates
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
     
-    // Place the room at the current preview position
-    const { gridX, gridY } = previewRoomPosition;
+    // Convert to world coordinates
+    const worldPos = {
+      x: (pointerPosition.x - position.x) / scale,
+      y: (pointerPosition.y - position.y) / scale
+    };
     
-    // Check if the cell is already occupied
-    const isOccupied = floorPlan.rooms.some(room => 
-      room.gridX === gridX && room.gridY === gridY
-    );
+    // Calculate grid coordinates
+    const gridX = Math.floor(worldPos.x / floorPlan.gridSizeWidth);
+    const gridY = Math.floor(worldPos.y / floorPlan.gridSizeHeight);
     
-    if (isOccupied) {
-      alert(`Cannot place room here - cell is already occupied`);
+    // If we're placing a room, place it at the clicked position
+    if (isPlacingRoom) {
+      placeRoomAtGridPosition(gridX, gridY);
+      setIsPlacingRoom(false);
       return;
     }
     
-    placeRoomAtGridPosition(gridX, gridY);
+    // If wall placement is active, check if click is inside the selected room
+    if (isWallPlacementActive && selectedId) {
+      const selectedRoom = floorPlan.rooms.find(room => room.id === selectedId);
+      if (selectedRoom && 
+          worldPos.x >= selectedRoom.x && 
+          worldPos.x <= selectedRoom.x + selectedRoom.width && 
+          worldPos.y >= selectedRoom.y && 
+          worldPos.y <= selectedRoom.y + selectedRoom.height) {
+        handleWallDrawingStart(selectedId, worldPos.x, worldPos.y);
+      }
+    }
+  };
+
+  const handleCanvasMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const stage = stageRef.current;
+    if (!stage) return;
     
-    // Exit placement mode
-    setIsPlacingRoom(false);
+    // Get pointer position in canvas coordinates
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
+    
+    // Convert to world coordinates
+    const worldPos = {
+      x: (pointerPosition.x - position.x) / scale,
+      y: (pointerPosition.y - position.y) / scale
+    };
+    
+    // If we're in room placement mode, update preview position
+    if (isPlacingRoom) {
+      // Calculate grid position
+      const gridX = Math.floor(worldPos.x / floorPlan.gridSizeWidth);
+      const gridY = Math.floor(worldPos.y / floorPlan.gridSizeHeight);
+      
+      setPreviewRoomPosition({ gridX, gridY });
+    }
+    
+    // If we're drawing a wall, update the wall preview
+    if (isDrawingWall) {
+      handleWallDrawingMove(worldPos.x, worldPos.y);
+    }
+  };
+
+  // Handle stage mouseup to end wall drawing
+  const handleStageMouseUp = () => {
+    if (isDrawingWall) {
+      handleWallDrawingEnd();
+    }
+  };
+
+  // Render wall preview during drawing
+  const renderWallPreview = () => {
+    if (!isDrawingWall || !wallStartPoint || !wallPreview) return null;
+    
+    const room = floorPlan.rooms.find(r => r.id === wallStartPoint.roomId);
+    if (!room) return null;
+    
+    return (
+      <Line
+        x={room.x}
+        y={room.y}
+        points={[
+          wallPreview.startX,
+          wallPreview.startY,
+          wallPreview.endX,
+          wallPreview.endY
+        ]}
+        stroke="blue"
+        strokeWidth={2}
+        dash={[5, 5]}
+      />
+    );
   };
 
   const renderGrid = () => {
@@ -826,10 +1007,19 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     >
       <div className="floor-plan-controls">
         <button onClick={addRoom}>{isPlacingRoom ? "Cancel Room" : "Add Room (n)"}</button>
+        {setIsWallPlacementActive && selectedId && (
+          <button 
+            onClick={toggleWallPlacement}
+            className={isWallPlacementActive ? 'active' : ''}
+          >
+            {isWallPlacementActive ? "Cancel Wall" : "Add Wall"}
+          </button>
+        )}
         <span className="grid-info">Grid: {floorPlan.gridSizeWidth}×{floorPlan.gridSizeHeight}mm</span>
         <span className="scale-info">Scale: {(scale * 100).toFixed(0)}% ({(floorPlan.gridSizeWidth * scale).toFixed(1)}mm/cell)</span>
         {selectedId && <span className="selected-info">Room selected: {floorPlan.rooms.find(r => r.id === selectedId)?.name}</span>}
         {isPlacingRoom && <span className="placement-info">Click to place room</span>}
+        {isWallPlacementActive && <span className="placement-info">Click and drag within {selectedId ? floorPlan.rooms.find(r => r.id === selectedId)?.name : 'selected room'} to create wall</span>}
       </div>
       <Stage 
         width={width} 
@@ -837,6 +1027,8 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         onClick={isPlacingRoom ? handleCanvasClick : handleDeselect}
         ref={stageRef}
         onMouseMove={handleCanvasMouseMove}
+        onMouseDown={handleCanvasClick}
+        onMouseUp={handleStageMouseUp}
         position={position}
         scale={{x: scale, y: scale}}
       >
@@ -870,8 +1062,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               gridSizeHeight={floorPlan.gridSizeHeight}
               onDragStart={handleRoomDragStart}
               onDragEnd={() => setIsDraggingRoom(false)}
+              disableDragging={isWallPlacementActive}
             />
           ))}
+          
+          {/* Wall preview */}
+          {renderWallPreview()}
         </Layer>
       </Stage>
     </div>

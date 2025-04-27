@@ -25,6 +25,9 @@ function App() {
   // Welcome modal visibility
   const [showWelcomeModal, setShowWelcomeModal] = useState(true);
 
+  // Wall placement state
+  const [isWallPlacementActive, setIsWallPlacementActive] = useState(false);
+
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
@@ -218,6 +221,11 @@ function App() {
     });
   };
 
+  // Toggle wall placement mode
+  const toggleWallPlacement = () => {
+    setIsWallPlacementActive(!isWallPlacementActive);
+  };
+
   return (
     <div className="App">
       <Navbar 
@@ -252,6 +260,8 @@ function App() {
             addToHistory={addToHistory}
             selectedRoom={selectedRoom}
             setSelectedRoom={setSelectedRoom}
+            isWallPlacementActive={isWallPlacementActive}
+            setIsWallPlacementActive={setIsWallPlacementActive}
           />
         </div>
         {isInspectorVisible && selectedRoom && (

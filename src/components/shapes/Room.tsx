@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Rect, Group, Text, Line } from 'react-konva';
 import Konva from 'konva';
-import { Room as RoomType, Portal as PortalType } from '../../types/Room';
+import { Room as RoomType, Portal as PortalType, Wall as WallType } from '../../types/Room';
 
 interface RoomProps {
   room: RoomType;
@@ -14,6 +14,7 @@ interface RoomProps {
   onDragEnd?: () => void;
   gridSizeWidth: number;
   gridSizeHeight: number;
+  disableDragging?: boolean;
 }
 
 const Room: React.FC<RoomProps> = ({
@@ -27,6 +28,7 @@ const Room: React.FC<RoomProps> = ({
   onDragEnd,
   gridSizeWidth,
   gridSizeHeight,
+  disableDragging = false,
 }) => {
   const shapeRef = React.useRef<Konva.Rect>(null);
   const trRef = React.useRef<Konva.Transformer>(null);
@@ -34,7 +36,7 @@ const Room: React.FC<RoomProps> = ({
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const dragStartPositionRef = useRef({ x: 0, y: 0 });
 
-  const { id, x, y, width, height, name, color, portals, gridX, gridY } = room;
+  const { id, x, y, width, height, name, color, portals, walls, gridX, gridY } = room;
 
   // Snap to grid (in mm)
   const snapToGridX = (value: number): number => {
@@ -146,6 +148,21 @@ const Room: React.FC<RoomProps> = ({
     });
   };
 
+  // Function to render walls
+  const renderWalls = () => {
+    return walls.map((wall: WallType) => {
+      return (
+        <Line
+          key={wall.id}
+          points={[wall.startX, wall.startY, wall.endX, wall.endY]}
+          stroke="black"
+          strokeWidth={2}
+          lineCap="round"
+        />
+      );
+    });
+  };
+
   // Double click handler for adding new portals
   const handleDoubleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (!onPortalAdd) return;
@@ -237,7 +254,14 @@ const Room: React.FC<RoomProps> = ({
   };
 
   return (
-    <Group>
+    <Group
+      onMouseEnter={e => {
+        document.body.style.cursor = disableDragging ? 'default' : 'pointer';
+      }}
+      onMouseLeave={e => {
+        document.body.style.cursor = 'default';
+      }}
+    >
       {renderGridPreview()}
       <Rect
         id={id}
@@ -256,7 +280,7 @@ const Room: React.FC<RoomProps> = ({
         onDblClick={handleDoubleClick}
         onDblTap={handleDoubleClick}
         ref={shapeRef}
-        draggable
+        draggable={!disableDragging}
         strokeScaleEnabled={false}
         strokeEnabled={true}
         perfectDrawEnabled={true}
@@ -359,6 +383,7 @@ const Room: React.FC<RoomProps> = ({
       {/* Render portals as lines on the walls */}
       <Group x={x} y={y}>
         {renderPortals()}
+        {renderWalls()}
       </Group>
     </Group>
   );

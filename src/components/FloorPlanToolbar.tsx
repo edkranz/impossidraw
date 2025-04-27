@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FloorPlan } from '../types/Room';
+import { FloorPlan, Room } from '../types/Room';
 
 interface FloorPlanToolbarProps {
   onNewProject: (gridSizeWidth: number, gridSizeHeight: number) => void;

@@ -172,6 +172,12 @@
   border-color: #bbb;
 }
 
+.toolbar-button.active {
+  background-color: #e6f7ff;
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
 .toolbar-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

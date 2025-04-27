@@ -11,6 +11,15 @@ export interface Portal {
   connectedPortalId: string | null;
 }
 
+export interface Wall {
+  id: string;
+  // Start and end points of the wall, relative to the room's coordinate system (in pixels)
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
 export interface Room {
   id: string;
   x: number;
@@ -22,6 +31,8 @@ export interface Room {
   color: string;
   // List of portals in this room
   portals: Portal[];
+  // List of internal walls in this room
+  walls: Wall[];
   // Grid cell coordinates
   gridX: number;
   gridY: number;
