@@ -329,6 +329,10 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       setIsWallPlacementActive(false);
     }
     
+    // Clear wall and vertex selections when selecting a room
+    setSelectedWallId(null);
+    setSelectedVertexId(null);
+    
     setSelectedId(id);
   };
 
@@ -336,7 +340,10 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     // Deselect when clicking on empty area
     const clickedOnEmpty = e.target === e.target.getStage();
     if (clickedOnEmpty) {
+      // Clear all selections
       setSelectedId(null);
+      setSelectedWallId(null);
+      setSelectedVertexId(null);
       setConnectingPortals(null);
       
       // If wall placement is active, deactivate it
@@ -737,12 +744,19 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   // Handle wall selection
   const handleWallSelect = (roomId: string, wallId: string) => {
+    // Handle event propagation
+    if (selectedId !== roomId) {
+      // If clicking a wall in a different room, select that room first
+      setSelectedId(roomId);
+    }
+    
     if (selectedWallId === wallId) {
       // Deselect if already selected
       setSelectedWallId(null);
     } else {
+      // Select this wall and clear other selections
       setSelectedWallId(wallId);
-      setSelectedVertexId(null); // Deselect any selected vertex
+      setSelectedVertexId(null);
     }
   };
 
@@ -770,12 +784,19 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         endY: vertex.y 
       });
     } else {
+      // Handle event propagation
+      if (selectedId !== roomId) {
+        // If clicking a vertex in a different room, select that room first
+        setSelectedId(roomId);
+      }
+      
       if (selectedVertexId === vertexId) {
         // Deselect if already selected
         setSelectedVertexId(null);
       } else {
+        // Select this vertex and clear other selections
         setSelectedVertexId(vertexId);
-        setSelectedWallId(null); // Deselect any selected wall
+        setSelectedWallId(null);
       }
     }
   };
@@ -1074,6 +1095,13 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const stage = stageRef.current;
     if (!stage) return;
     
+    // First, check if we clicked on a specific object
+    const clickedOnEmpty = e.target === e.target.getStage();
+    if (!clickedOnEmpty) {
+      // If we clicked on something specific, let that handler deal with it
+      return;
+    }
+    
     // Get pointer position in canvas coordinates
     const pointerPosition = stage.getPointerPosition();
     if (!pointerPosition) return;
@@ -1323,7 +1351,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       <Stage 
         width={width} 
         height={height}
-        onClick={isPlacingRoom ? handleCanvasClick : handleDeselect}
+        onClick={handleDeselect}
         ref={stageRef}
         onMouseMove={handleCanvasMouseMove}
         onMouseDown={handleCanvasClick}

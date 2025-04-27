@@ -356,7 +356,10 @@ const Room: React.FC<RoomProps> = ({
         shadowColor={isSelected ? '#1890ff' : undefined}
         shadowBlur={isSelected ? 6 : 0}
         shadowOpacity={isSelected ? 0.3 : 0}
-        onClick={() => onSelect(id)}
+        onClick={(e) => {
+          // Clicking the room background should clear wall and vertex selections
+          onSelect(id);
+        }}
         onTap={() => onSelect(id)}
         onDblClick={handleDoubleClick}
         onDblTap={handleDoubleClick}
