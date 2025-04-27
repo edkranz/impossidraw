@@ -11,13 +11,18 @@ export interface Portal {
   connectedPortalId: string | null;
 }
 
+export interface Vertex {
+  id: string;
+  x: number;
+  y: number;
+}
+
 export interface Wall {
   id: string;
-  // Start and end points of the wall, relative to the room's coordinate system (in pixels)
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
+  // IDs of the vertices that form this wall
+  vertexIds: string[];
+  // Whether this wall is selected
+  isSelected?: boolean;
 }
 
 export interface Room {
@@ -33,6 +38,8 @@ export interface Room {
   portals: Portal[];
   // List of internal walls in this room
   walls: Wall[];
+  // List of vertices used by walls in this room
+  vertices: Vertex[];
   // Grid cell coordinates
   gridX: number;
   gridY: number;

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Rect, Group, Text, Line } from 'react-konva';
+import { Rect, Group, Text, Line, Circle } from 'react-konva';
 import Konva from 'konva';
-import { Room as RoomType, Portal as PortalType, Wall as WallType } from '../../types/Room';
+import { Room as RoomType, Portal as PortalType, Wall as WallType, Vertex as VertexType } from '../../types/Room';
 
 interface RoomProps {
   room: RoomType;
@@ -15,6 +15,12 @@ interface RoomProps {
   gridSizeWidth: number;
   gridSizeHeight: number;
   disableDragging?: boolean;
+  onWallSelect?: (roomId: string, wallId: string) => void;
+  onVertexSelect?: (roomId: string, vertexId: string) => void;
+  onVertexDrag?: (roomId: string, vertexId: string, x: number, y: number) => void;
+  onWallDelete?: (roomId: string, wallId: string) => void;
+  selectedWallId?: string | null;
+  selectedVertexId?: string | null;
 }
 
 const Room: React.FC<RoomProps> = ({
@@ -29,6 +35,12 @@ const Room: React.FC<RoomProps> = ({
   gridSizeWidth,
   gridSizeHeight,
   disableDragging = false,
+  onWallSelect,
+  onVertexSelect,
+  onVertexDrag,
+  onWallDelete,
+  selectedWallId,
+  selectedVertexId
 }) => {
   const shapeRef = React.useRef<Konva.Rect>(null);
   const trRef = React.useRef<Konva.Transformer>(null);
@@ -36,7 +48,7 @@ const Room: React.FC<RoomProps> = ({
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const dragStartPositionRef = useRef({ x: 0, y: 0 });
 
-  const { id, x, y, width, height, name, color, portals, walls, gridX, gridY } = room;
+  const { id, x, y, width, height, name, color, portals, walls, vertices, gridX, gridY } = room;
 
   // Snap to grid (in mm)
   const snapToGridX = (value: number): number => {
@@ -148,17 +160,86 @@ const Room: React.FC<RoomProps> = ({
     });
   };
 
-  // Function to render walls
+  // Function to render walls using vertices
   const renderWalls = () => {
     return walls.map((wall: WallType) => {
+      // Find vertices for this wall
+      const wallVertices = wall.vertexIds
+        .map(vertexId => vertices.find(vertex => vertex.id === vertexId))
+        .filter(vertex => vertex) as VertexType[];
+      
+      if (wallVertices.length < 2) return null;
+      
+      // Create points array for the line
+      const points: number[] = [];
+      wallVertices.forEach(vertex => {
+        points.push(vertex.x, vertex.y);
+      });
+      
+      const isWallSelected = wall.id === selectedWallId;
+      
       return (
-        <Line
-          key={wall.id}
-          points={[wall.startX, wall.startY, wall.endX, wall.endY]}
-          stroke="black"
-          strokeWidth={2}
-          lineCap="round"
-        />
+        <React.Fragment key={wall.id}>
+          <Line
+            points={points}
+            stroke={isWallSelected ? "#1890ff" : "black"}
+            strokeWidth={isWallSelected ? 3 : 2}
+            lineCap="round"
+            lineJoin="round"
+            onClick={() => onWallSelect && onWallSelect(id, wall.id)}
+            onTap={() => onWallSelect && onWallSelect(id, wall.id)}
+            onDblClick={(e) => {
+              // Handle double click to delete wall
+              if (e.evt.ctrlKey || e.evt.metaKey) {
+                onWallDelete && onWallDelete(id, wall.id);
+              }
+            }}
+            hitStrokeWidth={10} // Wider hit area for easier selection
+          />
+          
+          {/* Render vertices */}
+          {wallVertices.map(vertex => {
+            const isVertexSelected = vertex.id === selectedVertexId;
+            
+            return (
+              <Circle
+                key={vertex.id}
+                x={vertex.x}
+                y={vertex.y}
+                radius={isVertexSelected ? 6 : 4}
+                fill={isVertexSelected ? "#1890ff" : (isWallSelected ? "#69c0ff" : "#333")}
+                stroke={isVertexSelected ? "#0050b3" : "#000"}
+                strokeWidth={1}
+                draggable={!disableDragging}
+                onClick={(e) => {
+                  e.cancelBubble = true; // Prevent event from bubbling to the room
+                  onVertexSelect && onVertexSelect(id, vertex.id);
+                }}
+                onTap={(e) => {
+                  e.cancelBubble = true;
+                  onVertexSelect && onVertexSelect(id, vertex.id);
+                }}
+                onDragMove={(e) => {
+                  // Confine vertex drag within room bounds
+                  const newX = Math.max(0, Math.min(width, e.target.x()));
+                  const newY = Math.max(0, Math.min(height, e.target.y()));
+                  e.target.position({ x: newX, y: newY });
+                }}
+                onDragEnd={(e) => {
+                  const newX = Math.max(0, Math.min(width, e.target.x()));
+                  const newY = Math.max(0, Math.min(height, e.target.y()));
+                  onVertexDrag && onVertexDrag(id, vertex.id, newX, newY);
+                }}
+                onMouseEnter={() => {
+                  document.body.style.cursor = 'pointer';
+                }}
+                onMouseLeave={() => {
+                  document.body.style.cursor = 'default';
+                }}
+              />
+            );
+          })}
+        </React.Fragment>
       );
     });
   };
@@ -380,10 +461,10 @@ const Room: React.FC<RoomProps> = ({
         fill="#777"
       />
       
-      {/* Render portals as lines on the walls */}
+      {/* Render portals and walls */}
       <Group x={x} y={y}>
-        {renderPortals()}
         {renderWalls()}
+        {renderPortals()}
       </Group>
     </Group>
   );

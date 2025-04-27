@@ -25,4 +25,86 @@ body.using-floor-plan {
   width: 100%;
   height: 100%;
   overscroll-behavior: none;
+}
+
+/* Controls for the floor plan canvas */
+.floor-plan-controls {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.floor-plan-controls button {
+  padding: 6px 12px;
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.floor-plan-controls button:hover {
+  background-color: #f0f0f0;
+  border-color: #ccc;
+}
+
+.floor-plan-controls button.active {
+  background-color: #e6f7ff;
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.placement-info {
+  background-color: #fffbe6;
+  border: 1px solid #ffe58f;
+  color: #d48806;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* Wall and Vertex Styles */
+.wall {
+  cursor: pointer;
+}
+
+.wall.selected {
+  stroke: #1890ff;
+  stroke-width: 3px;
+}
+
+.vertex {
+  cursor: pointer;
+}
+
+.vertex.selected {
+  fill: #1890ff;
+}
+
+/* Helper class for when a shape can be dragged */
+.draggable {
+  cursor: move;
+}
+
+/* Helper tooltip for interactions */
+.interaction-tooltip {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 300px;
+  text-align: center;
 } 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Group, Line, Rect } from 'react-konva';
-import { Room as RoomType, Portal as PortalType, FloorPlan, Wall as WallType } from '../types/Room';
+import { Room as RoomType, Portal as PortalType, FloorPlan, Wall as WallType, Vertex as VertexType } from '../types/Room';
 import Room from './shapes/Room';
 import { v4 as uuidv4 } from 'uuid';
 import Konva from 'konva';
@@ -42,8 +42,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   
   // Wall drawing state
   const [isDrawingWall, setIsDrawingWall] = useState(false);
-  const [wallStartPoint, setWallStartPoint] = useState<{ x: number, y: number, roomId: string } | null>(null);
+  const [wallStartPoint, setWallStartPoint] = useState<{ x: number, y: number, roomId: string, vertexId?: string } | null>(null);
   const [wallPreview, setWallPreview] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
+  
+  // Wall/vertex selection state
+  const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
+  const [selectedVertexId, setSelectedVertexId] = useState<string | null>(null);
 
   // Calculate min and max zoom limits based on grid size
   const getZoomLimits = () => {
@@ -83,12 +87,54 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (selectedId && (e.key === 'Delete' || e.key === 'Backspace')) {
+        // If a wall is selected, delete it
+        if (selectedWallId) {
+          e.preventDefault();
+          handleWallDelete(selectedId, selectedWallId);
+          return;
+        }
+        // If a vertex is selected, delete it (only if it's not used by multiple walls)
+        else if (selectedVertexId) {
+          e.preventDefault();
+          // Find the room
+          const room = floorPlan.rooms.find(r => r.id === selectedId);
+          if (!room) return;
+          
+          // Count how many walls use this vertex
+          let vertexUsageCount = 0;
+          for (const wall of room.walls) {
+            if (wall.vertexIds.includes(selectedVertexId)) {
+              vertexUsageCount++;
+            }
+          }
+          
+          // If the vertex is used by only one wall, delete that wall
+          if (vertexUsageCount === 1) {
+            const wallToDelete = room.walls.find(wall => 
+              wall.vertexIds.includes(selectedVertexId)
+            );
+            if (wallToDelete) {
+              handleWallDelete(selectedId, wallToDelete.id);
+            }
+          } else if (vertexUsageCount > 1) {
+            // If used by multiple walls, show an alert
+            alert("Cannot delete vertex used by multiple walls. Delete the walls first.");
+          }
+          return;
+        }
+        
+        // Otherwise delete the room
         deleteRoom(selectedId);
       }
       
       // Cancel room placement mode when pressing Escape
       if (isPlacingRoom && e.key === 'Escape') {
         setIsPlacingRoom(false);
+      }
+      
+      // Cancel wall placement mode when pressing Escape
+      if (isWallPlacementActive && e.key === 'Escape' && setIsWallPlacementActive) {
+        setIsWallPlacementActive(false);
       }
       
       // Add room shortcut - 'n' key
@@ -107,7 +153,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedId, floorPlan, isPlacingRoom]);
+  }, [selectedId, selectedWallId, selectedVertexId, floorPlan, isPlacingRoom, isWallPlacementActive]);
 
   // Add body class to prevent scrolling
   useEffect(() => {
@@ -490,6 +536,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       color: getRandomColor(0.2),
       portals: [],
       walls: [],
+      vertices: [],
       gridX,
       gridY
     };
@@ -688,24 +735,193 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     }
   };
 
+  // Handle wall selection
+  const handleWallSelect = (roomId: string, wallId: string) => {
+    if (selectedWallId === wallId) {
+      // Deselect if already selected
+      setSelectedWallId(null);
+    } else {
+      setSelectedWallId(wallId);
+      setSelectedVertexId(null); // Deselect any selected vertex
+    }
+  };
+
+  // Handle vertex selection
+  const handleVertexSelect = (roomId: string, vertexId: string) => {
+    if (isWallPlacementActive && selectedId === roomId) {
+      // If in wall placement mode and selecting a vertex, start drawing from that vertex
+      const room = floorPlan.rooms.find(r => r.id === roomId);
+      if (!room) return;
+      
+      const vertex = room.vertices.find(v => v.id === vertexId);
+      if (!vertex) return;
+      
+      setIsDrawingWall(true);
+      setWallStartPoint({ 
+        x: vertex.x, 
+        y: vertex.y, 
+        roomId,
+        vertexId: vertex.id
+      });
+      setWallPreview({ 
+        startX: vertex.x, 
+        startY: vertex.y, 
+        endX: vertex.x, 
+        endY: vertex.y 
+      });
+    } else {
+      if (selectedVertexId === vertexId) {
+        // Deselect if already selected
+        setSelectedVertexId(null);
+      } else {
+        setSelectedVertexId(vertexId);
+        setSelectedWallId(null); // Deselect any selected wall
+      }
+    }
+  };
+
+  // Handle vertex drag
+  const handleVertexDrag = (roomId: string, vertexId: string, newX: number, newY: number) => {
+    const updatedRooms = floorPlan.rooms.map(room => {
+      if (room.id === roomId) {
+        // Update the vertex position
+        const updatedVertices = room.vertices.map(vertex => {
+          if (vertex.id === vertexId) {
+            return {
+              ...vertex,
+              x: newX,
+              y: newY
+            };
+          }
+          return vertex;
+        });
+        
+        return {
+          ...room,
+          vertices: updatedVertices
+        };
+      }
+      return room;
+    });
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+  };
+
+  // Handle wall deletion
+  const handleWallDelete = (roomId: string, wallId: string) => {
+    const updatedRooms = floorPlan.rooms.map(room => {
+      if (room.id === roomId) {
+        // Find the wall to delete
+        const wallToDelete = room.walls.find(w => w.id === wallId);
+        if (!wallToDelete) return room;
+        
+        // Check if any vertices are used only by this wall
+        const vertexUsageCounts: Record<string, number> = {};
+        
+        // Count how many walls use each vertex
+        room.walls.forEach(wall => {
+          wall.vertexIds.forEach(vertexId => {
+            vertexUsageCounts[vertexId] = (vertexUsageCounts[vertexId] || 0) + 1;
+          });
+        });
+        
+        // Get vertices that will only be used by this wall (count === 1)
+        const unusedVertexIds = wallToDelete.vertexIds.filter(
+          vertexId => vertexUsageCounts[vertexId] === 1
+        );
+        
+        // Remove wall
+        const updatedWalls = room.walls.filter(wall => wall.id !== wallId);
+        
+        // Remove any vertices that are no longer used by any wall
+        const updatedVertices = room.vertices.filter(
+          vertex => !unusedVertexIds.includes(vertex.id)
+        );
+        
+        return {
+          ...room,
+          walls: updatedWalls,
+          vertices: updatedVertices
+        };
+      }
+      return room;
+    });
+    
+    // Clear selection
+    setSelectedWallId(null);
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+  };
+
   // Add a wall to a room
-  const addWallToRoom = (roomId: string, startX: number, startY: number, endX: number, endY: number) => {
+  const addWallToRoom = (roomId: string, startVertexId: string | null, startX: number, startY: number, endX: number, endY: number) => {
     const wallId = `wall-${uuidv4()}`;
     
     const updatedRooms = floorPlan.rooms.map(room => {
       if (room.id === roomId) {
+        // Check if we have an existing vertex to start from
+        let startVertex: VertexType | null = null;
+        if (startVertexId) {
+          startVertex = room.vertices.find(v => v.id === startVertexId) || null;
+        }
+        
+        // Check if there's an existing vertex near the end point
+        const endVertexSensitivity = 10; // pixels
+        let endVertex: VertexType | null = null;
+        
+        for (const vertex of room.vertices) {
+          const dx = vertex.x - endX;
+          const dy = vertex.y - endY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < endVertexSensitivity) {
+            endVertex = vertex;
+          }
+        }
+        
+        // Create vertices as needed
+        const newVertices: VertexType[] = [];
+        
+        if (!startVertex) {
+          startVertex = {
+            id: `vertex-${uuidv4()}`,
+            x: startX,
+            y: startY
+          };
+          newVertices.push(startVertex);
+        }
+        
+        if (!endVertex) {
+          endVertex = {
+            id: `vertex-${uuidv4()}`,
+            x: endX,
+            y: endY
+          };
+          newVertices.push(endVertex);
+        }
+        
+        // Create the new wall
+        const newWall: WallType = {
+          id: wallId,
+          vertexIds: [startVertex.id, endVertex.id]
+        };
+        
         return {
           ...room,
-          walls: [
-            ...room.walls,
-            {
-              id: wallId,
-              startX,
-              startY,
-              endX,
-              endY
-            }
-          ]
+          walls: [...room.walls, newWall],
+          vertices: [...room.vertices, ...newVertices]
         };
       }
       return room;
@@ -721,7 +937,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   };
 
   // Wall drawing handlers
-  const handleWallDrawingStart = (roomId: string, x: number, y: number) => {
+  const handleWallDrawingStart = (roomId: string, x: number, y: number, existingVertexId?: string) => {
     if (!isWallPlacementActive) return;
     
     // Only allow wall drawing in the selected room
@@ -738,9 +954,56 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     // Ensure the point is within room bounds
     if (localX < 0 || localX > room.width || localY < 0 || localY > room.height) return;
     
+    // Check if we're near an existing vertex
+    if (!existingVertexId) {
+      const sensitivity = 10; // pixels
+      let nearestVertex: VertexType | null = null;
+      let nearestDistance = Infinity;
+      
+      for (const vertex of room.vertices) {
+        const dx = vertex.x - localX;
+        const dy = vertex.y - localY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < sensitivity && distance < nearestDistance) {
+          nearestVertex = vertex;
+          nearestDistance = distance;
+        }
+      }
+      
+      if (nearestVertex) {
+        existingVertexId = nearestVertex.id;
+        // Use the exact vertex position
+        setIsDrawingWall(true);
+        setWallStartPoint({ 
+          x: nearestVertex.x, 
+          y: nearestVertex.y, 
+          roomId,
+          vertexId: nearestVertex.id
+        });
+        setWallPreview({ 
+          startX: nearestVertex.x, 
+          startY: nearestVertex.y, 
+          endX: nearestVertex.x, 
+          endY: nearestVertex.y 
+        });
+        return;
+      }
+    }
+    
     setIsDrawingWall(true);
-    setWallStartPoint({ x: localX, y: localY, roomId });
-    setWallPreview({ startX: localX, startY: localY, endX: localX, endY: localY });
+    setWallStartPoint({ 
+      x: localX, 
+      y: localY, 
+      roomId,
+      vertexId: existingVertexId
+    });
+    setWallPreview({ 
+      startX: localX, 
+      startY: localY, 
+      endX: localX, 
+      endY: localY 
+    });
   };
   
   const handleWallDrawingMove = (x: number, y: number) => {
@@ -754,12 +1017,30 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const localX = Math.max(0, Math.min(room.width, x - room.x));
     const localY = Math.max(0, Math.min(room.height, y - room.y));
     
+    // Check if we're near an existing vertex for snapping
+    const sensitivity = 10; // pixels
+    let snapToX = localX;
+    let snapToY = localY;
+    let snappedToVertex = false;
+    
+    for (const vertex of room.vertices) {
+      const dx = vertex.x - localX;
+      const dy = vertex.y - localY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < sensitivity) {
+        snapToX = vertex.x;
+        snapToY = vertex.y;
+        snappedToVertex = true;
+      }
+    }
+    
     // Update wall preview
     setWallPreview({
       startX: wallStartPoint.x,
       startY: wallStartPoint.y,
-      endX: localX,
-      endY: localY
+      endX: snapToX,
+      endY: snapToY
     });
   };
   
@@ -774,6 +1055,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     if (length > 10) { // Minimum 10px length
       addWallToRoom(
         wallStartPoint.roomId,
+        wallStartPoint.vertexId || null,
         wallPreview.startX,
         wallPreview.startY,
         wallPreview.endX,
@@ -870,19 +1152,21 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     if (!room) return null;
     
     return (
-      <Line
-        x={room.x}
-        y={room.y}
-        points={[
-          wallPreview.startX,
-          wallPreview.startY,
-          wallPreview.endX,
-          wallPreview.endY
-        ]}
-        stroke="blue"
-        strokeWidth={2}
-        dash={[5, 5]}
-      />
+      <Group>
+        <Line
+          x={room.x}
+          y={room.y}
+          points={[
+            wallPreview.startX,
+            wallPreview.startY,
+            wallPreview.endX,
+            wallPreview.endY
+          ]}
+          stroke="blue"
+          strokeWidth={2}
+          dash={[5, 5]}
+        />
+      </Group>
     );
   };
 
@@ -1020,6 +1304,21 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         {selectedId && <span className="selected-info">Room selected: {floorPlan.rooms.find(r => r.id === selectedId)?.name}</span>}
         {isPlacingRoom && <span className="placement-info">Click to place room</span>}
         {isWallPlacementActive && <span className="placement-info">Click and drag within {selectedId ? floorPlan.rooms.find(r => r.id === selectedId)?.name : 'selected room'} to create wall</span>}
+        {selectedWallId && <span className="placement-info">Wall selected (Delete/Backspace to remove)</span>}
+        {selectedVertexId && <span className="placement-info">Vertex selected (Drag to move, Delete/Backspace to remove)</span>}
+      </div>
+      
+      {/* Help tooltip for walls and vertices */}
+      <div className="interaction-tooltip">
+        {isWallPlacementActive && 
+          "Click and drag to create walls. Click on existing vertices to connect walls. Press ESC to cancel."
+        }
+        {!isWallPlacementActive && selectedWallId && 
+          "Press Delete or Backspace to remove the selected wall. Ctrl+Double-click also works."
+        }
+        {!isWallPlacementActive && selectedVertexId && 
+          "Drag to move vertex. Press Delete to remove (only works for vertices used by one wall)."
+        }
       </div>
       <Stage 
         width={width} 
@@ -1063,6 +1362,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               onDragStart={handleRoomDragStart}
               onDragEnd={() => setIsDraggingRoom(false)}
               disableDragging={isWallPlacementActive}
+              onWallSelect={handleWallSelect}
+              onVertexSelect={handleVertexSelect}
+              onVertexDrag={handleVertexDrag}
+              onWallDelete={handleWallDelete}
+              selectedWallId={selectedWallId}
+              selectedVertexId={selectedVertexId}
             />
           ))}
           
