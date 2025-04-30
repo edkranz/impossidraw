@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Group, Line, Rect } from 'react-konva';
+import Konva from 'konva';
+import { v4 as uuidv4 } from 'uuid';
 import { Room as RoomType, Portal as PortalType, FloorPlan, Wall as WallType, Vertex as VertexType } from '../types/Room';
 import Room from './shapes/Room';
-import { v4 as uuidv4 } from 'uuid';
-import Konva from 'konva';
 import '../styles/FloorPlanCanvas.css';
 import { useGesture } from '@use-gesture/react';
 
@@ -1298,12 +1298,22 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   // Handle wall deletion
   const handleWallDelete = (roomId: string, wallId: string) => {
-    const updatedRooms = floorPlan.rooms.map(room => {
+    // Find the wall to delete
+    const roomToUpdate = floorPlan.rooms.find(r => r.id === roomId);
+    if (!roomToUpdate) return;
+
+    const wallToDelete = roomToUpdate.walls.find(w => w.id === wallId);
+    if (!wallToDelete) return;
+
+    // Check if the wall is a portal with a connected portal
+    const isPortalWithConnection = 'isPortal' in wallToDelete && 
+                                   wallToDelete.isPortal === true && 
+                                   (wallToDelete as PortalType).connectedRoomId && 
+                                   (wallToDelete as PortalType).connectedPortalId;
+
+    let updatedRooms = floorPlan.rooms.map(room => {
+      // Handle deleting the current wall/portal
       if (room.id === roomId) {
-        // Find the wall to delete
-        const wallToDelete = room.walls.find(w => w.id === wallId);
-        if (!wallToDelete) return room;
-        
         // Check if any vertices are used only by this wall
         const vertexUsageCounts: Record<string, number> = {};
         
@@ -1333,6 +1343,48 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           vertices: updatedVertices
         };
       }
+      
+      // If deleting a portal, also delete the connected portal in the other room
+      if (isPortalWithConnection) {
+        const portal = wallToDelete as PortalType;
+        if (room.id === portal.connectedRoomId) {
+          // Find and delete the connected portal
+          const connectedPortalId = portal.connectedPortalId;
+          const connectedPortal = room.walls.find(w => w.id === connectedPortalId);
+          
+          if (connectedPortal) {
+            // Check which vertices will become unused
+            const vertexUsageCounts: Record<string, number> = {};
+            
+            // Count how many walls use each vertex
+            room.walls.forEach(wall => {
+              wall.vertexIds.forEach(vertexId => {
+                vertexUsageCounts[vertexId] = (vertexUsageCounts[vertexId] || 0) + 1;
+              });
+            });
+            
+            // Get vertices that will only be used by this portal (count === 1)
+            const unusedVertexIds = connectedPortal.vertexIds.filter(
+              vertexId => vertexUsageCounts[vertexId] === 1
+            );
+            
+            // Remove the connected portal
+            const updatedWalls = room.walls.filter(wall => wall.id !== connectedPortalId);
+            
+            // Remove any vertices that are no longer used by any wall
+            const updatedVertices = room.vertices.filter(
+              vertex => !unusedVertexIds.includes(vertex.id)
+            );
+            
+            return {
+              ...room,
+              walls: updatedWalls,
+              vertices: updatedVertices
+            };
+          }
+        }
+      }
+      
       return room;
     });
     
