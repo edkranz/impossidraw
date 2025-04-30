@@ -337,6 +337,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   };
 
   const handleDeselect = (e: any) => {
+    // Don't deselect if we're in wall placement mode and drawing a wall
+    if (isWallPlacementActive && isDrawingWall) {
+      return;
+    }
+    
     // Deselect when clicking on empty area
     const clickedOnEmpty = e.target === e.target.getStage();
     if (clickedOnEmpty) {
@@ -350,8 +355,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       if (isWallPlacementActive && setIsWallPlacementActive) {
         setIsWallPlacementActive(false);
       }
-      
-      // Room placement is now handled by handleCanvasClick
     }
   };
 
@@ -1095,13 +1098,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const stage = stageRef.current;
     if (!stage) return;
     
-    // First, check if we clicked on a specific object
-    const clickedOnEmpty = e.target === e.target.getStage();
-    if (!clickedOnEmpty) {
-      // If we clicked on something specific, let that handler deal with it
-      return;
-    }
-    
     // Get pointer position in canvas coordinates
     const pointerPosition = stage.getPointerPosition();
     if (!pointerPosition) return;
@@ -1132,7 +1128,13 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           worldPos.y >= selectedRoom.y && 
           worldPos.y <= selectedRoom.y + selectedRoom.height) {
         handleWallDrawingStart(selectedId, worldPos.x, worldPos.y);
+        return; // Don't do deselection if we're starting to draw a wall
       }
+    }
+    
+    // If we reach here, handle deselection if clicking on empty space
+    if (e.target === e.target.getStage()) {
+      handleDeselect(e);
     }
   };
 
