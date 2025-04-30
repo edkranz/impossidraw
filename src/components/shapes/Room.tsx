@@ -53,6 +53,11 @@ const Room: React.FC<RoomProps> = ({
   // State to track hovered vertex and wall
   const [hoveredVertexId, setHoveredVertexId] = useState<string | null>(null);
   const [hoveredWallId, setHoveredWallId] = useState<string | null>(null);
+  const [dragPreviewLines, setDragPreviewLines] = useState<{
+    vertexId: string;
+    points: number[];
+  }[]>([]);
+  const [isDraggingVertex, setIsDraggingVertex] = useState(false);
 
   // Snap to grid (in mm)
   const snapToGridX = (value: number): number => {
@@ -226,7 +231,9 @@ const Room: React.FC<RoomProps> = ({
                   stroke={isVertexSelected ? "#0050b3" : (isVertexHovered ? "#1890ff" : (isWallSelected ? "#69c0ff" : "#d9d9d9"))}
                   strokeWidth={isVertexSelected || isVertexHovered ? 2 : 1}
                   opacity={isVertexSelected || isVertexHovered ? 1 : 0.8}
+                  // Add a larger hitbox area
                   hitStrokeWidth={6}
+                  // Set invisible hit area that's larger than the visible vertex
                   hitRadius={8}
                   draggable={!disableDragging}
                   onClick={(e) => {
@@ -236,6 +243,9 @@ const Room: React.FC<RoomProps> = ({
                   onTap={(e) => {
                     e.cancelBubble = true;
                     onVertexSelect && onVertexSelect(id, vertex.id);
+                  }}
+                  onDragStart={() => {
+                    setIsDraggingVertex(true);
                   }}
                   onDragMove={(e) => {
                     // Confine vertex drag within room bounds
@@ -250,6 +260,9 @@ const Room: React.FC<RoomProps> = ({
                     const newX = Math.max(0, Math.min(width, e.target.x()));
                     const newY = Math.max(0, Math.min(height, e.target.y()));
                     onVertexDrag && onVertexDrag(id, vertex.id, newX, newY);
+                    
+                    // Clear drag previews once drag is complete
+                    setIsDraggingVertex(false);
                   }}
                   onMouseEnter={() => {
                     document.body.style.cursor = 'pointer';
@@ -267,12 +280,6 @@ const Room: React.FC<RoomProps> = ({
       );
     });
   };
-  
-  // State for vertex drag preview
-  const [dragPreviewLines, setDragPreviewLines] = useState<{
-    vertexId: string;
-    points: number[];
-  }[]>([]);
   
   // Function to render preview when dragging a vertex
   const renderVertexDragPreview = (vertexId: string, newX: number, newY: number) => {
@@ -309,10 +316,10 @@ const Room: React.FC<RoomProps> = ({
   
   // Clear preview lines when not dragging
   useEffect(() => {
-    if (!selectedVertexId) {
+    if (!isDraggingVertex) {
       setDragPreviewLines([]);
     }
-  }, [selectedVertexId]);
+  }, [isDraggingVertex]);
 
   // Double click handler for adding new portals
   const handleDoubleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {

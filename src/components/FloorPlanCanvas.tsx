@@ -806,35 +806,114 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   // Handle vertex drag
   const handleVertexDrag = (roomId: string, vertexId: string, newX: number, newY: number) => {
-    const updatedRooms = floorPlan.rooms.map(room => {
-      if (room.id === roomId) {
-        // Update the vertex position
-        const updatedVertices = room.vertices.map(vertex => {
-          if (vertex.id === vertexId) {
-            return {
-              ...vertex,
-              x: newX,
-              y: newY
-            };
-          }
-          return vertex;
-        });
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Check if this vertex is close to any other vertex for merging
+    const mergeThreshold = 15; // pixels
+    let targetVertex: VertexType | null = null;
+    
+    // Find the closest vertex that's not the one being dragged
+    for (const vertex of room.vertices) {
+      if (vertex.id !== vertexId) {
+        const distance = Math.sqrt(
+          Math.pow(vertex.x - newX, 2) + 
+          Math.pow(vertex.y - newY, 2)
+        );
         
-        return {
-          ...room,
-          vertices: updatedVertices
-        };
+        if (distance < mergeThreshold) {
+          targetVertex = vertex;
+          break;
+        }
       }
-      return room;
-    });
+    }
     
-    const updatedFloorPlan = {
-      ...floorPlan,
-      rooms: updatedRooms
-    };
-    
-    setFloorPlan(updatedFloorPlan);
-    addToHistory(updatedFloorPlan);
+    // If we found a target vertex to merge with
+    if (targetVertex) {
+      // Update all walls that use the dragged vertex to use the target vertex
+      const updatedWalls = room.walls.map(wall => {
+        // If this wall uses the dragged vertex
+        if (wall.vertexIds.includes(vertexId)) {
+          // Replace references to the dragged vertex with the target vertex
+          const updatedVertexIds = wall.vertexIds.map(vid => 
+            vid === vertexId ? targetVertex!.id : vid
+          );
+          
+          // Remove any duplicates that might have been created
+          const uniqueVertexIds = updatedVertexIds.filter((vid, index) => 
+            updatedVertexIds.indexOf(vid) === index
+          );
+          
+          // Only keep walls that still have at least 2 vertices
+          if (uniqueVertexIds.length < 2) {
+            return null; // Mark for removal
+          }
+          
+          return {
+            ...wall,
+            vertexIds: uniqueVertexIds
+          };
+        }
+        return wall;
+      }).filter(wall => wall !== null) as WallType[]; // Remove any null entries
+      
+      // Remove the dragged vertex since it's now merged
+      const updatedVertices = room.vertices.filter(v => v.id !== vertexId);
+      
+      // Update the room with new walls and vertices
+      const updatedRooms = floorPlan.rooms.map(r => {
+        if (r.id === roomId) {
+          return {
+            ...r,
+            walls: updatedWalls,
+            vertices: updatedVertices
+          };
+        }
+        return r;
+      });
+      
+      // Clear selected vertex since it no longer exists
+      setSelectedVertexId(null);
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
+    } else {
+      // Normal vertex movement if not merging
+      const updatedRooms = floorPlan.rooms.map(room => {
+        if (room.id === roomId) {
+          // Update the vertex position
+          const updatedVertices = room.vertices.map(vertex => {
+            if (vertex.id === vertexId) {
+              return {
+                ...vertex,
+                x: newX,
+                y: newY
+              };
+            }
+            return vertex;
+          });
+          
+          return {
+            ...room,
+            vertices: updatedVertices
+          };
+        }
+        return room;
+      });
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
+    }
   };
 
   // Handle wall deletion
@@ -1085,6 +1164,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         wallPreview.endX,
         wallPreview.endY
       );
+      
+      // After adding the wall, disable wall placement mode
+      if (setIsWallPlacementActive) {
+        setIsWallPlacementActive(false);
+      }
     }
     
     // Reset wall drawing state
