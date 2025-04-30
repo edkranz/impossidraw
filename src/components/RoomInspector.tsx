@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Room as RoomType } from '../types/Room';
+import { Room as RoomType, Portal as PortalType, Wall as WallType } from '../types/Room';
 import './RoomInspector.css';
 
 interface RoomInspectorProps {
@@ -26,6 +26,16 @@ const RoomInspector: React.FC<RoomInspectorProps> = ({
       setRoomColor(rgbaToHex(selectedRoom.color));
     }
   }, [selectedRoom]);
+
+  // Helper function to check if a wall is a portal
+  const isPortal = (wall: WallType): boolean => {
+    return 'isPortal' in wall && (wall as PortalType).isPortal === true;
+  };
+
+  // Get portals from the walls array
+  const getPortals = (room: RoomType): PortalType[] => {
+    return room.walls.filter(isPortal) as PortalType[];
+  };
 
   // Update the room when user changes a value
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,6 +109,9 @@ const RoomInspector: React.FC<RoomInspectorProps> = ({
   const widthInMeters = (selectedRoom.width / 1000).toFixed(2);
   const heightInMeters = (selectedRoom.height / 1000).toFixed(2);
 
+  // Get portals from walls array
+  const portals = getPortals(selectedRoom);
+
   return (
     <div className={`room-inspector ${isVisible ? '' : 'hidden'}`}>
       <button className="inspector-close-button" onClick={toggleVisibility}>
@@ -148,11 +161,11 @@ const RoomInspector: React.FC<RoomInspectorProps> = ({
       <div className="inspector-field">
         <label>Portals</label>
         <div className="portals-display">
-          {selectedRoom.portals.length > 0 ? (
+          {portals.length > 0 ? (
             <ul className="portal-list">
-              {selectedRoom.portals.map(portal => (
+              {portals.map(portal => (
                 <li key={portal.id} className="portal-item">
-                  {portal.wallPosition} wall ({(portal.position * 100).toFixed(0)}%)
+                  Portal {portal.id.substring(0, 6)}
                   {portal.connectedRoomId ? ' - Connected' : ' - Unconnected'}
                 </li>
               ))}

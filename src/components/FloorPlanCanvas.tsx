@@ -31,7 +31,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   setIsWallPlacementActive
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [connectingPortals, setConnectingPortals] = useState<{ roomId: string, portalId: string } | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const stageRef = useRef<Konva.Stage>(null);
@@ -40,14 +39,29 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   const [previewRoomPosition, setPreviewRoomPosition] = useState({ gridX: 0, gridY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Portal placement state
+  const [isPortalPlacementActive, setIsPortalPlacementActive] = useState(false);
+  
   // Wall drawing state
   const [isDrawingWall, setIsDrawingWall] = useState(false);
   const [wallStartPoint, setWallStartPoint] = useState<{ x: number, y: number, roomId: string, vertexId?: string } | null>(null);
   const [wallPreview, setWallPreview] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
   
+  // Add portal drawing state similar to wall drawing state
+  const [isDrawingPortal, setIsDrawingPortal] = useState(false);
+  const [portalStartPoint, setPortalStartPoint] = useState<{ x: number, y: number, roomId: string, vertexId?: string } | null>(null);
+  const [portalPreview, setPortalPreview] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
+  
   // Wall/vertex selection state
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
   const [selectedVertexId, setSelectedVertexId] = useState<string | null>(null);
+
+  // Add state to track portal connection
+  const [pendingPortalConnection, setPendingPortalConnection] = useState<{
+    sourceRoomId: string;
+    portalId: string;
+    vertices: { x: number, y: number }[];
+  } | null>(null);
 
   // Calculate min and max zoom limits based on grid size
   const getZoomLimits = () => {
@@ -154,6 +168,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         setIsWallPlacementActive(false);
       }
       
+      // Cancel portal placement mode when pressing Escape
+      if (isPortalPlacementActive && e.key === 'Escape') {
+        setIsPortalPlacementActive(false);
+        setPendingPortalConnection(null);
+      }
+      
       // Add room shortcut - 'n' key
       if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         // Only trigger if not typing in an input field
@@ -170,7 +190,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedId, selectedWallId, selectedVertexId, floorPlan, isPlacingRoom, isWallPlacementActive]);
+  }, [selectedId, selectedWallId, selectedVertexId, floorPlan, isPlacingRoom, isWallPlacementActive, isPortalPlacementActive, pendingPortalConnection]);
 
   // Add body class to prevent scrolling
   useEffect(() => {
@@ -336,6 +356,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   // Handle room mouse events
   const handleSelect = (id: string) => {
+    // If we're waiting for a portal connection target, handle the connection
+    if (pendingPortalConnection) {
+      handleRoomClickForPortalConnection(id);
+      return;
+    }
+    
     // Cancel room placement if we click on an existing room
     if (isPlacingRoom) {
       setIsPlacingRoom(false);
@@ -359,18 +385,34 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       return;
     }
     
+    // Don't deselect if we're in portal placement mode and drawing a portal
+    if (isPortalPlacementActive && isDrawingPortal) {
+      return;
+    }
+    
     // Deselect when clicking on empty area
     const clickedOnEmpty = e.target === e.target.getStage();
     if (clickedOnEmpty) {
+      // If we're in the portal connection phase, cancel it
+      if (pendingPortalConnection) {
+        setPendingPortalConnection(null);
+        setIsPortalPlacementActive(false);
+        return;
+      }
+      
       // Clear all selections
       setSelectedId(null);
       setSelectedWallId(null);
       setSelectedVertexId(null);
-      setConnectingPortals(null);
       
       // If wall placement is active, deactivate it
       if (isWallPlacementActive && setIsWallPlacementActive) {
         setIsWallPlacementActive(false);
+      }
+      
+      // If portal placement is active, deactivate it
+      if (isPortalPlacementActive) {
+        setIsPortalPlacementActive(false);
       }
     }
   };
@@ -562,6 +604,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       name: `Room ${floorPlan.rooms.length + 1}`,
       color: getRandomColor(0.2),
       portals: [],
+      portalIds: [],
       walls: [],
       vertices: [],
       gridX,
@@ -643,348 +686,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setSelectedId(null);
   };
 
-  const addPortalToRoom = (roomId: string, wallPosition: 'top' | 'right' | 'bottom' | 'left', position: number) => {
-    const portalId = `portal-${uuidv4()}`;
-    
-    const updatedRooms = floorPlan.rooms.map(room => {
-      if (room.id === roomId) {
-        // Check if there's already a portal nearby to avoid overcrowding
-        const tooClose = room.portals.some(portal => {
-          if (portal.wallPosition !== wallPosition) return false;
-          
-          // Check if portals are within 10% of each other
-          return Math.abs(portal.position - position) < 0.1;
-        });
-        
-        if (tooClose) return room;
-        
-        return {
-          ...room,
-          portals: [
-            ...room.portals,
-            {
-              id: portalId,
-              wallPosition,
-              position,
-              width: 0.1, // Default to 10% of wall width/height
-              connectedRoomId: null,
-              connectedPortalId: null
-            }
-          ]
-        };
-      }
-      return room;
-    });
-    
-    const updatedFloorPlan = {
-      ...floorPlan,
-      rooms: updatedRooms
-    };
-    
-    setFloorPlan(updatedFloorPlan);
-    addToHistory(updatedFloorPlan);
-  };
-
-  const handlePortalClick = (roomId: string, portalId: string) => {
-    // If we're not in portal connecting mode yet
-    if (!connectingPortals) {
-      setConnectingPortals({ roomId, portalId });
-      return;
-    }
-    
-    // If we clicked the same portal, cancel connecting mode
-    if (connectingPortals.roomId === roomId && connectingPortals.portalId === portalId) {
-      setConnectingPortals(null);
-      return;
-    }
-    
-    // Connect the two portals
-    const updatedRooms = floorPlan.rooms.map(room => {
-      // Update the first portal
-      if (room.id === connectingPortals.roomId) {
-        const updatedPortals = room.portals.map(portal => {
-          if (portal.id === connectingPortals.portalId) {
-            return {
-              ...portal,
-              connectedRoomId: roomId,
-              connectedPortalId: portalId
-            };
-          }
-          return portal;
-        });
-        
-        return {
-          ...room,
-          portals: updatedPortals
-        };
-      }
-      
-      // Update the second portal
-      if (room.id === roomId) {
-        const updatedPortals = room.portals.map(portal => {
-          if (portal.id === portalId) {
-            return {
-              ...portal,
-              connectedRoomId: connectingPortals.roomId,
-              connectedPortalId: connectingPortals.portalId
-            };
-          }
-          return portal;
-        });
-        
-        return {
-          ...room,
-          portals: updatedPortals
-        };
-      }
-      
-      return room;
-    });
-    
-    const updatedFloorPlan = {
-      ...floorPlan,
-      rooms: updatedRooms
-    };
-    
-    setFloorPlan(updatedFloorPlan);
-    addToHistory(updatedFloorPlan);
-    setConnectingPortals(null);
-  };
-
-  // Toggle wall placement mode
-  const toggleWallPlacement = () => {
-    if (setIsWallPlacementActive) {
-      setIsWallPlacementActive(!isWallPlacementActive);
-      // Cancel room placement if active
-      if (isPlacingRoom) {
-        setIsPlacingRoom(false);
-      }
-    }
-  };
-
-  // Handle wall selection
-  const handleWallSelect = (roomId: string, wallId: string) => {
-    // Handle event propagation
-    if (selectedId !== roomId) {
-      // If clicking a wall in a different room, select that room first
-      setSelectedId(roomId);
-    }
-    
-    if (selectedWallId === wallId) {
-      // Deselect if already selected
-      setSelectedWallId(null);
-    } else {
-      // Select this wall and clear other selections
-      setSelectedWallId(wallId);
-      setSelectedVertexId(null);
-    }
-  };
-
-  // Handle vertex selection
-  const handleVertexSelect = (roomId: string, vertexId: string) => {
-    if (isWallPlacementActive && selectedId === roomId) {
-      // If in wall placement mode and selecting a vertex, start drawing from that vertex
-      const room = floorPlan.rooms.find(r => r.id === roomId);
-      if (!room) return;
-      
-      const vertex = room.vertices.find(v => v.id === vertexId);
-      if (!vertex) return;
-      
-      setIsDrawingWall(true);
-      setWallStartPoint({ 
-        x: vertex.x, 
-        y: vertex.y, 
-        roomId,
-        vertexId: vertex.id
-      });
-      setWallPreview({ 
-        startX: vertex.x, 
-        startY: vertex.y, 
-        endX: vertex.x, 
-        endY: vertex.y 
-      });
-    } else {
-      // Handle event propagation
-      if (selectedId !== roomId) {
-        // If clicking a vertex in a different room, select that room first
-        setSelectedId(roomId);
-      }
-      
-      if (selectedVertexId === vertexId) {
-        // Deselect if already selected
-        setSelectedVertexId(null);
-      } else {
-        // Select this vertex and clear other selections
-        setSelectedVertexId(vertexId);
-        setSelectedWallId(null);
-      }
-    }
-  };
-
-  // Handle vertex drag
-  const handleVertexDrag = (roomId: string, vertexId: string, newX: number, newY: number) => {
-    const room = floorPlan.rooms.find(r => r.id === roomId);
-    if (!room) return;
-    
-    // Check if this vertex is close to any other vertex for merging
-    const mergeThreshold = 15; // pixels
-    let targetVertex: VertexType | null = null;
-    
-    // Find the closest vertex that's not the one being dragged
-    for (const vertex of room.vertices) {
-      if (vertex.id !== vertexId) {
-        const distance = Math.sqrt(
-          Math.pow(vertex.x - newX, 2) + 
-          Math.pow(vertex.y - newY, 2)
-        );
-        
-        if (distance < mergeThreshold) {
-          targetVertex = vertex;
-          break;
-        }
-      }
-    }
-    
-    // If we found a target vertex to merge with
-    if (targetVertex) {
-      // Update all walls that use the dragged vertex to use the target vertex
-      const updatedWalls = room.walls.map(wall => {
-        // If this wall uses the dragged vertex
-        if (wall.vertexIds.includes(vertexId)) {
-          // Replace references to the dragged vertex with the target vertex
-          const updatedVertexIds = wall.vertexIds.map(vid => 
-            vid === vertexId ? targetVertex!.id : vid
-          );
-          
-          // Remove any duplicates that might have been created
-          const uniqueVertexIds = updatedVertexIds.filter((vid, index) => 
-            updatedVertexIds.indexOf(vid) === index
-          );
-          
-          // Only keep walls that still have at least 2 vertices
-          if (uniqueVertexIds.length < 2) {
-            return null; // Mark for removal
-          }
-          
-          return {
-            ...wall,
-            vertexIds: uniqueVertexIds
-          };
-        }
-        return wall;
-      }).filter(wall => wall !== null) as WallType[]; // Remove any null entries
-      
-      // Remove the dragged vertex since it's now merged
-      const updatedVertices = room.vertices.filter(v => v.id !== vertexId);
-      
-      // Update the room with new walls and vertices
-      const updatedRooms = floorPlan.rooms.map(r => {
-        if (r.id === roomId) {
-          return {
-            ...r,
-            walls: updatedWalls,
-            vertices: updatedVertices
-          };
-        }
-        return r;
-      });
-      
-      // Clear selected vertex since it no longer exists
-      setSelectedVertexId(null);
-      
-      const updatedFloorPlan = {
-        ...floorPlan,
-        rooms: updatedRooms
-      };
-      
-      setFloorPlan(updatedFloorPlan);
-      addToHistory(updatedFloorPlan);
-    } else {
-      // Normal vertex movement if not merging
-      const updatedRooms = floorPlan.rooms.map(room => {
-        if (room.id === roomId) {
-          // Update the vertex position
-          const updatedVertices = room.vertices.map(vertex => {
-            if (vertex.id === vertexId) {
-              return {
-                ...vertex,
-                x: newX,
-                y: newY
-              };
-            }
-            return vertex;
-          });
-          
-          return {
-            ...room,
-            vertices: updatedVertices
-          };
-        }
-        return room;
-      });
-      
-      const updatedFloorPlan = {
-        ...floorPlan,
-        rooms: updatedRooms
-      };
-      
-      setFloorPlan(updatedFloorPlan);
-      addToHistory(updatedFloorPlan);
-    }
-  };
-
-  // Handle wall deletion
-  const handleWallDelete = (roomId: string, wallId: string) => {
-    const updatedRooms = floorPlan.rooms.map(room => {
-      if (room.id === roomId) {
-        // Find the wall to delete
-        const wallToDelete = room.walls.find(w => w.id === wallId);
-        if (!wallToDelete) return room;
-        
-        // Check if any vertices are used only by this wall
-        const vertexUsageCounts: Record<string, number> = {};
-        
-        // Count how many walls use each vertex
-        room.walls.forEach(wall => {
-          wall.vertexIds.forEach(vertexId => {
-            vertexUsageCounts[vertexId] = (vertexUsageCounts[vertexId] || 0) + 1;
-          });
-        });
-        
-        // Get vertices that will only be used by this wall (count === 1)
-        const unusedVertexIds = wallToDelete.vertexIds.filter(
-          vertexId => vertexUsageCounts[vertexId] === 1
-        );
-        
-        // Remove wall
-        const updatedWalls = room.walls.filter(wall => wall.id !== wallId);
-        
-        // Remove any vertices that are no longer used by any wall
-        const updatedVertices = room.vertices.filter(
-          vertex => !unusedVertexIds.includes(vertex.id)
-        );
-        
-        return {
-          ...room,
-          walls: updatedWalls,
-          vertices: updatedVertices
-        };
-      }
-      return room;
-    });
-    
-    // Clear selection
-    setSelectedWallId(null);
-    
-    const updatedFloorPlan = {
-      ...floorPlan,
-      rooms: updatedRooms
-    };
-    
-    setFloorPlan(updatedFloorPlan);
-    addToHistory(updatedFloorPlan);
-  };
-
   // Add a wall to a room
   const addWallToRoom = (roomId: string, startVertexId: string | null, startX: number, startY: number, endX: number, endY: number) => {
     const wallId = `wall-${uuidv4()}`;
@@ -1055,6 +756,1192 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setFloorPlan(updatedFloorPlan);
     addToHistory(updatedFloorPlan);
   };
+
+  const addPortalToRoom = (roomId: string, startVertexId: string | null, startX: number, startY: number, endX: number, endY: number) => {
+    const portalId = `portal-${uuidv4()}`;
+    
+    const updatedRooms = floorPlan.rooms.map(room => {
+      if (room.id === roomId) {
+        // Check if we have an existing vertex to start from
+        let startVertex: VertexType | null = null;
+        if (startVertexId) {
+          startVertex = room.vertices.find(v => v.id === startVertexId) || null;
+        }
+        
+        // Check if there's an existing vertex near the end point
+        const endVertexSensitivity = 10; // pixels
+        let endVertex: VertexType | null = null;
+        
+        for (const vertex of room.vertices) {
+          const dx = vertex.x - endX;
+          const dy = vertex.y - endY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < endVertexSensitivity) {
+            endVertex = vertex;
+          }
+        }
+        
+        // Create vertices as needed
+        const newVertices: VertexType[] = [];
+        
+        if (!startVertex) {
+          startVertex = {
+            id: `vertex-${uuidv4()}`,
+            x: startX,
+            y: startY,
+            isPortalVertex: true
+          };
+          newVertices.push(startVertex);
+        } else if (!startVertex.isPortalVertex) {
+          // If using existing vertex, mark it as a portal vertex
+          startVertex = {
+            ...startVertex,
+            isPortalVertex: true
+          };
+        }
+        
+        if (!endVertex) {
+          endVertex = {
+            id: `vertex-${uuidv4()}`,
+            x: endX,
+            y: endY,
+            isPortalVertex: true
+          };
+          newVertices.push(endVertex);
+        } else if (!endVertex.isPortalVertex) {
+          // If using existing vertex, mark it as a portal vertex
+          endVertex = {
+            ...endVertex,
+            isPortalVertex: true
+          };
+        }
+        
+        // Create the new portal - similar to a wall but with isPortal flag
+        const newPortal: PortalType = {
+          id: portalId,
+          vertexIds: [startVertex.id, endVertex.id],
+          isPortal: true,
+          connectedRoomId: null,
+          connectedPortalId: null
+        };
+        
+        // Update existing vertices if needed
+        const updatedVertices = room.vertices.map(v => {
+          if (v.id === startVertex?.id && !v.isPortalVertex) {
+            return { ...v, isPortalVertex: true };
+          }
+          if (v.id === endVertex?.id && !v.isPortalVertex) {
+            return { ...v, isPortalVertex: true };
+          }
+          return v;
+        });
+        
+        // Add any new vertices
+        const finalVertices = [
+          ...updatedVertices.filter(v => !newVertices.some(nv => nv.id === v.id)),
+          ...newVertices
+        ];
+        
+        return {
+          ...room,
+          walls: [...room.walls, newPortal],
+          vertices: finalVertices
+        };
+      }
+      return room;
+    });
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+  };
+
+  const handlePortalClick = (roomId: string, portalId: string) => {
+    // Import the utility function to find portals
+    const { findConnectedPortal } = require('../utils/portalUtils');
+    
+    // If we're not in portal connecting mode yet
+    if (!selectedId) {
+      setSelectedId(roomId);
+      return;
+    }
+    
+    // If we clicked the same portal, cancel connecting mode
+    if (selectedId === roomId) {
+      setSelectedId(null);
+      return;
+    }
+    
+    // Connect the two portals
+    const updatedRooms = floorPlan.rooms.map(room => {
+      // Find the actual portal walls in the walls array
+      const isPortal = (wall: any) => 'isPortal' in wall && wall.isPortal === true;
+      
+      // Update the first portal
+      if (room.id === selectedId) {
+        const updatedWalls = room.walls.map(wall => {
+          if (isPortal(wall) && wall.id === portalId) {
+            return {
+              ...wall,
+              connectedRoomId: roomId,
+              connectedPortalId: portalId
+            };
+          }
+          return wall;
+        });
+        
+        return {
+          ...room,
+          walls: updatedWalls
+        };
+      }
+      
+      // Update the second portal
+      if (room.id === roomId) {
+        const updatedWalls = room.walls.map(wall => {
+          if (isPortal(wall) && wall.id === portalId) {
+            return {
+              ...wall,
+              connectedRoomId: selectedId,
+              connectedPortalId: portalId
+            };
+          }
+          return wall;
+        });
+        
+        return {
+          ...room,
+          walls: updatedWalls
+        };
+      }
+      
+      return room;
+    });
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+    setSelectedId(null);
+  };
+
+  // Toggle wall placement mode
+  const toggleWallPlacement = () => {
+    if (setIsWallPlacementActive) {
+      setIsWallPlacementActive(!isWallPlacementActive);
+      // Cancel room placement if active
+      if (isPlacingRoom) {
+        setIsPlacingRoom(false);
+      }
+    }
+  };
+
+  // Toggle portal placement mode
+  const togglePortalPlacement = () => {
+    // Reset portal drawing state when toggling
+    setIsDrawingPortal(false);
+    setPortalStartPoint(null);
+    setPortalPreview(null);
+    setPendingPortalConnection(null);
+    
+    setIsPortalPlacementActive(!isPortalPlacementActive);
+    
+    // Cancel other placement modes if active
+    if (isPlacingRoom) {
+      setIsPlacingRoom(false);
+    }
+    
+    if (isWallPlacementActive && setIsWallPlacementActive) {
+      setIsWallPlacementActive(false);
+    }
+  };
+
+  // Handle wall selection
+  const handleWallSelect = (roomId: string, wallId: string) => {
+    // Handle event propagation
+    if (selectedId !== roomId) {
+      // If clicking a wall in a different room, select that room first
+      setSelectedId(roomId);
+    }
+    
+    if (selectedWallId === wallId) {
+      // Deselect if already selected
+      setSelectedWallId(null);
+    } else {
+      // Select this wall and clear other selections
+      setSelectedWallId(wallId);
+      setSelectedVertexId(null);
+    }
+  };
+
+  // Handle vertex selection
+  const handleVertexSelect = (roomId: string, vertexId: string) => {
+    if (isWallPlacementActive && selectedId === roomId) {
+      // If in wall placement mode and selecting a vertex, start drawing from that vertex
+      const room = floorPlan.rooms.find(r => r.id === roomId);
+      if (!room) return;
+      
+      const vertex = room.vertices.find(v => v.id === vertexId);
+      if (!vertex) return;
+      
+      setIsDrawingWall(true);
+      setWallStartPoint({ 
+        x: vertex.x, 
+        y: vertex.y, 
+        roomId,
+        vertexId: vertex.id
+      });
+      setWallPreview({ 
+        startX: vertex.x, 
+        startY: vertex.y, 
+        endX: vertex.x, 
+        endY: vertex.y 
+      });
+    } else {
+      // Handle event propagation
+      if (selectedId !== roomId) {
+        // If clicking a vertex in a different room, select that room first
+        setSelectedId(roomId);
+      }
+      
+      if (selectedVertexId === vertexId) {
+        // Deselect if already selected
+        setSelectedVertexId(null);
+      } else {
+        // Select this vertex and clear other selections
+        setSelectedVertexId(vertexId);
+        setSelectedWallId(null);
+      }
+    }
+  };
+
+  // Handle vertex drag
+  const handleVertexDrag = (roomId: string, vertexId: string, newX: number, newY: number) => {
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Get the vertex being dragged
+    const draggedVertex = room.vertices.find(v => v.id === vertexId);
+    if (!draggedVertex) return;
+    
+    // Check if this vertex is part of a portal that has a connection
+    let connectedPortalInfo: {
+      sourceRoomId: string;
+      sourcePortalId: string;
+      targetRoomId: string;
+      targetPortalId: string;
+      draggedVertexIndex: number;
+    } | null = null;
+    
+    // Find if this vertex belongs to a portal
+    if (draggedVertex.isPortalVertex) {
+      // Find which portal this vertex belongs to
+      for (const wall of room.walls) {
+        if (wall.vertexIds.includes(vertexId) && 'isPortal' in wall) {
+          // First cast to PortalType to access portal properties
+          const portalWall = wall as PortalType;
+          if (portalWall.connectedRoomId && portalWall.connectedPortalId) {
+            // Found a portal that uses this vertex and has a connection
+            
+            // Get the connected room and portal
+            const targetRoom = floorPlan.rooms.find(r => r.id === portalWall.connectedRoomId);
+            if (targetRoom) {
+              // Find the connected portal in the target room
+              const targetPortal = targetRoom.walls.find(w => w.id === portalWall.connectedPortalId) as PortalType | undefined;
+              if (targetPortal) {
+                // Store information about the connection for later use
+                connectedPortalInfo = {
+                  sourceRoomId: roomId,
+                  sourcePortalId: portalWall.id,
+                  targetRoomId: targetRoom.id,
+                  targetPortalId: targetPortal.id,
+                  // Index of the dragged vertex in the portal's vertex array (0 or 1 for start or end)
+                  draggedVertexIndex: portalWall.vertexIds.indexOf(vertexId)
+                };
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Check if this vertex is close to any other vertex for merging
+    const mergeThreshold = 15; // pixels
+    let targetVertex: VertexType | null = null;
+    
+    // Find the closest vertex that's not the one being dragged
+    for (const vertex of room.vertices) {
+      if (vertex.id !== vertexId) {
+        const distance = Math.sqrt(
+          Math.pow(vertex.x - newX, 2) + 
+          Math.pow(vertex.y - newY, 2)
+        );
+        
+        if (distance < mergeThreshold) {
+          targetVertex = vertex;
+          break;
+        }
+      }
+    }
+    
+    // If we found a target vertex to merge with
+    if (targetVertex) {
+      // Update all walls that use the dragged vertex to use the target vertex
+      const updatedWalls = room.walls.map(wall => {
+        // If this wall uses the dragged vertex
+        if (wall.vertexIds.includes(vertexId)) {
+          // Replace references to the dragged vertex with the target vertex
+          const updatedVertexIds = wall.vertexIds.map(vid => 
+            vid === vertexId ? targetVertex!.id : vid
+          );
+          
+          // Remove any duplicates that might have been created
+          const uniqueVertexIds = updatedVertexIds.filter((vid, index) => 
+            updatedVertexIds.indexOf(vid) === index
+          );
+          
+          // Only keep walls that still have at least 2 vertices
+          if (uniqueVertexIds.length < 2) {
+            return null; // Mark for removal
+          }
+          
+          return {
+            ...wall,
+            vertexIds: uniqueVertexIds
+          };
+        }
+        return wall;
+      }).filter(wall => wall !== null) as WallType[]; // Remove any null entries
+      
+      // Remove the dragged vertex since it's now merged
+      const updatedVertices = room.vertices.filter(v => v.id !== vertexId);
+      
+      // If this was part of a connected portal, we need to handle the connected portal too
+      let updatedRooms;
+      if (connectedPortalInfo !== null) {
+        // We'll need to update the rooms with the merged portals
+        updatedRooms = floorPlan.rooms.map(r => {
+          if (r.id === roomId) {
+            return {
+              ...r,
+              walls: updatedWalls,
+              vertices: updatedVertices
+            };
+          }
+          
+          // Handle the connected room's portal if needed (for merging)
+          // This will need custom implementation based on the app's requirements
+          return r;
+        });
+      } else {
+        // Normal merge operation without connected portals
+        updatedRooms = floorPlan.rooms.map(r => {
+          if (r.id === roomId) {
+            return {
+              ...r,
+              walls: updatedWalls,
+              vertices: updatedVertices
+            };
+          }
+          return r;
+        });
+      }
+      
+      // Clear selected vertex since it no longer exists
+      setSelectedVertexId(null);
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
+    } else {
+      // Normal vertex movement if not merging
+      // For connected portals, calculate relative movement in both rooms
+      let updatedRooms;
+      
+      if (connectedPortalInfo !== null) {
+        const sourceRoom = room; // The room with the vertex being dragged
+        const targetRoomId = connectedPortalInfo.targetRoomId;
+        const targetPortalId = connectedPortalInfo.targetPortalId;
+        const draggedVertexIndex = connectedPortalInfo.draggedVertexIndex;
+        
+        const targetRoom = floorPlan.rooms.find(r => r.id === targetRoomId);
+        
+        if (targetRoom) {
+          // Calculate how much the vertex has moved in relative terms
+          const oldVertex = sourceRoom.vertices.find(v => v.id === vertexId);
+          if (!oldVertex) return;
+          
+          // Calculate movement in relative units (0-1)
+          const relativeXMovement = (newX - oldVertex.x) / sourceRoom.width;
+          const relativeYMovement = (newY - oldVertex.y) / sourceRoom.height;
+          
+          // Find the target portal vertex that corresponds to the dragged vertex
+          const targetPortal = targetRoom.walls.find(w => w.id === targetPortalId) as PortalType | undefined;
+          if (!targetPortal) return;
+          
+          // Get the target vertex ID at the same position (first or second)
+          const targetVertexId = targetPortal.vertexIds[draggedVertexIndex];
+          
+          // Find the target vertex
+          const targetPortalVertex = targetRoom.vertices.find(v => v.id === targetVertexId);
+          if (!targetPortalVertex) return;
+          
+          // Calculate the absolute movement for the target vertex
+          const targetXMovement = relativeXMovement * targetRoom.width;
+          const targetYMovement = relativeYMovement * targetRoom.height;
+          
+          // Calculate new coordinates for the target vertex
+          const newTargetX = targetPortalVertex.x + targetXMovement;
+          const newTargetY = targetPortalVertex.y + targetYMovement;
+          
+          // Update both rooms
+          updatedRooms = floorPlan.rooms.map(r => {
+            if (r.id === roomId) {
+              // Update source room vertex
+              return {
+                ...r,
+                vertices: r.vertices.map(vertex => {
+                  if (vertex.id === vertexId) {
+                    return {
+                      ...vertex,
+                      x: newX,
+                      y: newY
+                    };
+                  }
+                  return vertex;
+                })
+              };
+            } 
+            else if (r.id === targetRoom.id) {
+              // Update target room vertex
+              return {
+                ...r,
+                vertices: r.vertices.map(vertex => {
+                  if (vertex.id === targetVertexId) {
+                    return {
+                      ...vertex,
+                      x: newTargetX,
+                      y: newTargetY
+                    };
+                  }
+                  return vertex;
+                })
+              };
+            }
+            return r;
+          });
+        } else {
+          // If target room not found, just update the source room
+          updatedRooms = floorPlan.rooms.map(room => {
+            if (room.id === roomId) {
+              return {
+                ...room,
+                vertices: room.vertices.map(vertex => {
+                  if (vertex.id === vertexId) {
+                    return {
+                      ...vertex,
+                      x: newX,
+                      y: newY
+                    };
+                  }
+                  return vertex;
+                })
+              };
+            }
+            return room;
+          });
+        }
+      } else {
+        // Normal vertex movement without connected portals
+        updatedRooms = floorPlan.rooms.map(room => {
+          if (room.id === roomId) {
+            return {
+              ...room,
+              vertices: room.vertices.map(vertex => {
+                if (vertex.id === vertexId) {
+                  return {
+                    ...vertex,
+                    x: newX,
+                    y: newY
+                  };
+                }
+                return vertex;
+              })
+            };
+          }
+          return room;
+        });
+      }
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
+    }
+  };
+
+  // Handle wall deletion
+  const handleWallDelete = (roomId: string, wallId: string) => {
+    const updatedRooms = floorPlan.rooms.map(room => {
+      if (room.id === roomId) {
+        // Find the wall to delete
+        const wallToDelete = room.walls.find(w => w.id === wallId);
+        if (!wallToDelete) return room;
+        
+        // Check if any vertices are used only by this wall
+        const vertexUsageCounts: Record<string, number> = {};
+        
+        // Count how many walls use each vertex
+        room.walls.forEach(wall => {
+          wall.vertexIds.forEach(vertexId => {
+            vertexUsageCounts[vertexId] = (vertexUsageCounts[vertexId] || 0) + 1;
+          });
+        });
+        
+        // Get vertices that will only be used by this wall (count === 1)
+        const unusedVertexIds = wallToDelete.vertexIds.filter(
+          vertexId => vertexUsageCounts[vertexId] === 1
+        );
+        
+        // Remove wall
+        const updatedWalls = room.walls.filter(wall => wall.id !== wallId);
+        
+        // Remove any vertices that are no longer used by any wall
+        const updatedVertices = room.vertices.filter(
+          vertex => !unusedVertexIds.includes(vertex.id)
+        );
+        
+        return {
+          ...room,
+          walls: updatedWalls,
+          vertices: updatedVertices
+        };
+      }
+      return room;
+    });
+    
+    // Clear selection
+    setSelectedWallId(null);
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+  };
+
+  // Portal drawing handlers - mirror wall drawing handlers
+  const handlePortalDrawingStart = (roomId: string, x: number, y: number, existingVertexId?: string) => {
+    if (!isPortalPlacementActive) return;
+    
+    // Only allow portal drawing in the selected room
+    if (selectedId !== roomId) return;
+    
+    // Find the room in global coordinates
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Convert global coordinates to room-local coordinates
+    const localX = x - room.x;
+    const localY = y - room.y;
+    
+    // Ensure the point is within room bounds
+    if (localX < 0 || localX > room.width || localY < 0 || localY > room.height) return;
+    
+    // Check if we're near an existing vertex
+    if (!existingVertexId) {
+      const sensitivity = 10; // pixels
+      let nearestVertex: VertexType | null = null;
+      let nearestDistance = Infinity;
+      
+      for (const vertex of room.vertices) {
+        const dx = vertex.x - localX;
+        const dy = vertex.y - localY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < sensitivity && distance < nearestDistance) {
+          nearestVertex = vertex;
+          nearestDistance = distance;
+        }
+      }
+      
+      if (nearestVertex) {
+        existingVertexId = nearestVertex.id;
+        // Use the exact vertex position
+        setIsDrawingPortal(true);
+        setPortalStartPoint({ 
+          x: nearestVertex.x, 
+          y: nearestVertex.y, 
+          roomId,
+          vertexId: nearestVertex.id
+        });
+        setPortalPreview({ 
+          startX: nearestVertex.x, 
+          startY: nearestVertex.y, 
+          endX: nearestVertex.x, 
+          endY: nearestVertex.y 
+        });
+        return;
+      }
+    }
+    
+    setIsDrawingPortal(true);
+    setPortalStartPoint({ 
+      x: localX, 
+      y: localY, 
+      roomId,
+      vertexId: existingVertexId
+    });
+    setPortalPreview({ 
+      startX: localX, 
+      startY: localY, 
+      endX: localX, 
+      endY: localY 
+    });
+  };
+
+  const handlePortalDrawingMove = (x: number, y: number) => {
+    if (!isDrawingPortal || !portalStartPoint) return;
+    
+    // Find the room
+    const room = floorPlan.rooms.find(r => r.id === portalStartPoint.roomId);
+    if (!room) return;
+    
+    // Convert global coordinates to room-local coordinates
+    const localX = Math.max(0, Math.min(room.width, x - room.x));
+    const localY = Math.max(0, Math.min(room.height, y - room.y));
+    
+    // Check if we're near an existing vertex for snapping
+    const sensitivity = 10; // pixels
+    let snapToX = localX;
+    let snapToY = localY;
+    let snappedToVertex = false;
+    
+    for (const vertex of room.vertices) {
+      const dx = vertex.x - localX;
+      const dy = vertex.y - localY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < sensitivity) {
+        snapToX = vertex.x;
+        snapToY = vertex.y;
+        snappedToVertex = true;
+      }
+    }
+    
+    // Update portal preview
+    setPortalPreview({
+      startX: portalStartPoint.x,
+      startY: portalStartPoint.y,
+      endX: snapToX,
+      endY: snapToY
+    });
+  };
+
+  const handlePortalDrawingEnd = () => {
+    if (!isDrawingPortal || !portalStartPoint || !portalPreview) return;
+    
+    // Check if portal has a minimum length (to prevent accidental clicks)
+    const dx = portalPreview.endX - portalPreview.startX;
+    const dy = portalPreview.endY - portalPreview.startY;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    
+    if (length > 10) { // Minimum 10px length
+      // Create portal ID
+      const portalId = `portal-${uuidv4()}`;
+      const roomId = portalStartPoint.roomId;
+      
+      // Find the room to add the portal to
+      const updatedRooms = floorPlan.rooms.map(room => {
+        if (room.id === roomId) {
+          // Similar to wall creation but creating a portal
+          // Check if we have an existing vertex to start from
+          let startVertex: VertexType | null = null;
+          if (portalStartPoint.vertexId) {
+            startVertex = room.vertices.find(v => v.id === portalStartPoint.vertexId) || null;
+          }
+          
+          // Check if there's an existing vertex near the end point
+          const endVertexSensitivity = 10; // pixels
+          let endVertex: VertexType | null = null;
+          
+          for (const vertex of room.vertices) {
+            const dx = vertex.x - portalPreview.endX;
+            const dy = vertex.y - portalPreview.endY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < endVertexSensitivity) {
+              endVertex = vertex;
+            }
+          }
+          
+          // Create vertices as needed
+          const newVertices: VertexType[] = [];
+          
+          if (!startVertex) {
+            startVertex = {
+              id: `vertex-${uuidv4()}`,
+              x: portalPreview.startX,
+              y: portalPreview.startY,
+              isPortalVertex: true
+            };
+            newVertices.push(startVertex);
+          } else if (!startVertex.isPortalVertex) {
+            // Mark existing vertex as portal vertex
+            startVertex = {
+              ...startVertex,
+              isPortalVertex: true
+            };
+          }
+          
+          if (!endVertex) {
+            endVertex = {
+              id: `vertex-${uuidv4()}`,
+              x: portalPreview.endX,
+              y: portalPreview.endY,
+              isPortalVertex: true
+            };
+            newVertices.push(endVertex);
+          } else if (!endVertex.isPortalVertex) {
+            // Mark existing vertex as portal vertex
+            endVertex = {
+              ...endVertex,
+              isPortalVertex: true
+            };
+          }
+          
+          // Create the portal as a special type of wall
+          const newPortal: PortalType = {
+            id: portalId,
+            vertexIds: [startVertex.id, endVertex.id],
+            isPortal: true,
+            connectedRoomId: null,
+            connectedPortalId: null
+          };
+          
+          // Update existing vertices if needed
+          const updatedVertices = room.vertices.map(v => {
+            if (v.id === startVertex?.id && !v.isPortalVertex) {
+              return { ...v, isPortalVertex: true };
+            }
+            if (v.id === endVertex?.id && !v.isPortalVertex) {
+              return { ...v, isPortalVertex: true };
+            }
+            return v;
+          });
+          
+          // Add any new vertices
+          const finalVertices = [
+            ...updatedVertices.filter(v => !newVertices.some(nv => nv.id === v.id)),
+            ...newVertices
+          ];
+          
+          return {
+            ...room,
+            walls: [...room.walls, newPortal],
+            vertices: finalVertices
+          };
+        }
+        return room;
+      });
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      // Update state
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
+      
+      // Store portal information for the second step
+      setPendingPortalConnection({
+        sourceRoomId: roomId,
+        portalId,
+        vertices: [
+          { x: portalPreview.startX, y: portalPreview.startY },
+          { x: portalPreview.endX, y: portalPreview.endY }
+        ]
+      });
+      
+      // Change message to instruct user to select destination room
+    }
+    
+    // Reset portal drawing state
+    setIsDrawingPortal(false);
+    setPortalStartPoint(null);
+    setPortalPreview(null);
+  };
+
+  // Handle selecting a room to connect the portal to
+  const handleRoomClickForPortalConnection = (targetRoomId: string) => {
+    if (!pendingPortalConnection || targetRoomId === pendingPortalConnection.sourceRoomId) {
+      return;
+    }
+    
+    // Find source and target rooms
+    const sourceRoom = floorPlan.rooms.find(r => r.id === pendingPortalConnection.sourceRoomId);
+    const targetRoom = floorPlan.rooms.find(r => r.id === targetRoomId);
+    
+    if (!sourceRoom || !targetRoom) {
+      setPendingPortalConnection(null);
+      return;
+    }
+    
+    // Find the source portal
+    const sourcePortal = sourceRoom.walls.find(w => w.id === pendingPortalConnection.portalId) as PortalType | undefined;
+    if (!sourcePortal) {
+      setPendingPortalConnection(null);
+      return;
+    }
+    
+    // Create a mirror portal in the target room
+    const mirrorPortalId = `portal-${uuidv4()}`;
+    
+    // Calculate where to place the mirror portal in the target room
+    // This will create a portal at the same relative position in the target room
+    const [startPoint, endPoint] = pendingPortalConnection.vertices;
+    
+    // Calculate relative positions within the source room
+    const relStartX = startPoint.x / sourceRoom.width;
+    const relStartY = startPoint.y / sourceRoom.height;
+    const relEndX = endPoint.x / sourceRoom.width;
+    const relEndY = endPoint.y / sourceRoom.height;
+    
+    // Calculate absolute positions in the target room
+    const targetStartX = relStartX * targetRoom.width;
+    const targetStartY = relStartY * targetRoom.height;
+    const targetEndX = relEndX * targetRoom.width;
+    const targetEndY = relEndY * targetRoom.height;
+    
+    // Create vertices for the mirrored portal
+    const mirrorStartVertexId = `vertex-${uuidv4()}`;
+    const mirrorEndVertexId = `vertex-${uuidv4()}`;
+    
+    const updatedRooms = floorPlan.rooms.map(room => {
+      // Update the source room portal to connect to the target
+      if (room.id === pendingPortalConnection.sourceRoomId) {
+        const updatedWalls = room.walls.map(wall => {
+          if (wall.id === pendingPortalConnection.portalId) {
+            return {
+              ...wall,
+              connectedRoomId: targetRoomId,
+              connectedPortalId: mirrorPortalId
+            };
+          }
+          return wall;
+        });
+        
+        return {
+          ...room,
+          walls: updatedWalls
+        };
+      }
+      
+      // Create the mirrored portal in the target room
+      if (room.id === targetRoomId) {
+        // Create new vertices for the mirror portal
+        const mirrorStartVertex: VertexType = {
+          id: mirrorStartVertexId,
+          x: targetStartX,
+          y: targetStartY,
+          isPortalVertex: true
+        };
+        
+        const mirrorEndVertex: VertexType = {
+          id: mirrorEndVertexId,
+          x: targetEndX,
+          y: targetEndY,
+          isPortalVertex: true
+        };
+        
+        // Create the mirror portal
+        const mirrorPortal: PortalType = {
+          id: mirrorPortalId,
+          vertexIds: [mirrorStartVertexId, mirrorEndVertexId],
+          isPortal: true,
+          connectedRoomId: pendingPortalConnection.sourceRoomId,
+          connectedPortalId: pendingPortalConnection.portalId
+        };
+        
+        return {
+          ...room,
+          walls: [...room.walls, mirrorPortal],
+          vertices: [...room.vertices, mirrorStartVertex, mirrorEndVertex]
+        };
+      }
+      
+      return room;
+    });
+    
+    // Update the floor plan with both portals connected
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+    
+    // Clear the pending connection
+    setPendingPortalConnection(null);
+    setIsPortalPlacementActive(false);
+  };
+
+  // Handle canvas click now supports portal placement similar to wall placement
+  const handleCanvasClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    // Get pointer position in canvas coordinates
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
+    
+    // Convert to world coordinates
+    const worldPos = {
+      x: (pointerPosition.x - position.x) / scale,
+      y: (pointerPosition.y - position.y) / scale
+    };
+    
+    // Calculate grid coordinates
+    const gridX = Math.floor(worldPos.x / floorPlan.gridSizeWidth);
+    const gridY = Math.floor(worldPos.y / floorPlan.gridSizeHeight);
+    
+    // If we're placing a room, place it at the clicked position
+    if (isPlacingRoom) {
+      placeRoomAtGridPosition(gridX, gridY);
+      setIsPlacingRoom(false);
+      return;
+    }
+    
+    // If we're waiting for the second room to place a portal, don't do anything
+    // (selection is handled in the handleSelect function)
+    if (pendingPortalConnection) {
+      return;
+    }
+    
+    // If wall placement is active, check if click is inside the selected room
+    if (isWallPlacementActive && selectedId) {
+      const selectedRoom = floorPlan.rooms.find(room => room.id === selectedId);
+      if (selectedRoom && 
+          worldPos.x >= selectedRoom.x && 
+          worldPos.x <= selectedRoom.x + selectedRoom.width && 
+          worldPos.y >= selectedRoom.y && 
+          worldPos.y <= selectedRoom.y + selectedRoom.height) {
+        handleWallDrawingStart(selectedId, worldPos.x, worldPos.y);
+        return; // Don't do deselection if we're starting to draw a wall
+      }
+    }
+    
+    // If portal placement is active, check if click is inside the selected room
+    if (isPortalPlacementActive && selectedId && !pendingPortalConnection) {
+      const selectedRoom = floorPlan.rooms.find(room => room.id === selectedId);
+      if (selectedRoom && 
+          worldPos.x >= selectedRoom.x && 
+          worldPos.x <= selectedRoom.x + selectedRoom.width && 
+          worldPos.y >= selectedRoom.y && 
+          worldPos.y <= selectedRoom.y + selectedRoom.height) {
+        handlePortalDrawingStart(selectedId, worldPos.x, worldPos.y);
+        return; // Don't do deselection if we're starting to draw a portal
+      }
+    }
+    
+    // If we reach here, handle deselection if clicking on empty space
+    if (e.target === e.target.getStage()) {
+      handleDeselect(e);
+    }
+  };
+
+  // Update handleCanvasMouseMove to handle portal drawing
+  const handleCanvasMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    // Get pointer position in canvas coordinates
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
+    
+    // Convert to world coordinates
+    const worldPos = {
+      x: (pointerPosition.x - position.x) / scale,
+      y: (pointerPosition.y - position.y) / scale
+    };
+    
+    // If we're in room placement mode, update preview position
+    if (isPlacingRoom) {
+      // Calculate grid position
+      const gridX = Math.floor(worldPos.x / floorPlan.gridSizeWidth);
+      const gridY = Math.floor(worldPos.y / floorPlan.gridSizeHeight);
+      
+      setPreviewRoomPosition({ gridX, gridY });
+    }
+    
+    // If we're drawing a wall, update the wall preview
+    if (isDrawingWall) {
+      handleWallDrawingMove(worldPos.x, worldPos.y);
+    }
+    
+    // If we're drawing a portal, update the portal preview
+    if (isDrawingPortal) {
+      handlePortalDrawingMove(worldPos.x, worldPos.y);
+    }
+  };
+
+  // Update handleStageMouseUp to handle portal drawing end
+  const handleStageMouseUp = () => {
+    if (isDrawingWall) {
+      handleWallDrawingEnd();
+    }
+    
+    if (isDrawingPortal) {
+      handlePortalDrawingEnd();
+    }
+  };
+
+  // Render portal preview during drawing
+  const renderPortalPreview = () => {
+    if (!isDrawingPortal || !portalStartPoint || !portalPreview) return null;
+    
+    const room = floorPlan.rooms.find(r => r.id === portalStartPoint.roomId);
+    if (!room) return null;
+    
+    return (
+      <Group>
+        <Line
+          x={room.x}
+          y={room.y}
+          points={[
+            portalPreview.startX,
+            portalPreview.startY,
+            portalPreview.endX,
+            portalPreview.endY
+          ]}
+          stroke="#4CAF50"
+          strokeWidth={3}
+          dash={[5, 3]}
+        />
+      </Group>
+    );
+  };
+
+  const renderGrid = () => {
+    const { gridSizeWidth, gridSizeHeight } = floorPlan;
+    const lines = [];
+    
+    // Calculate the visible area in grid coordinates
+    // Guard against extreme scale values that could cause NaN
+    const safeScale = Math.max(0.0001, scale);
+    
+    const leftEdge = Math.floor(-position.x / safeScale / gridSizeWidth) * gridSizeWidth - gridSizeWidth;
+    const topEdge = Math.floor(-position.y / safeScale / gridSizeHeight) * gridSizeHeight - gridSizeHeight;
+    const rightEdge = Math.ceil((width - position.x) / safeScale / gridSizeWidth) * gridSizeWidth + gridSizeWidth;
+    const bottomEdge = Math.ceil((height - position.y) / safeScale / gridSizeHeight) * gridSizeHeight + gridSizeHeight;
+    
+    // Safety check to prevent too many grid lines at extreme zoom levels
+    const gridLineLimit = 1000;
+    const hLineCount = Math.min(Math.ceil((bottomEdge - topEdge) / gridSizeHeight), gridLineLimit);
+    const vLineCount = Math.min(Math.ceil((rightEdge - leftEdge) / gridSizeWidth), gridLineLimit);
+    
+    if (hLineCount > 0 && vLineCount > 0 && isFinite(hLineCount) && isFinite(vLineCount)) {
+      // Vertical lines
+      for (let x = leftEdge; x <= rightEdge; x += gridSizeWidth) {
+        if (!isFinite(x)) continue;
+        lines.push(
+          <Line
+            key={`v-${x}`}
+            points={[x, topEdge, x, bottomEdge]}
+            stroke="#ddd"
+            strokeWidth={1 / safeScale}
+          />
+        );
+      }
+      
+      // Horizontal lines
+      for (let y = topEdge; y <= bottomEdge; y += gridSizeHeight) {
+        if (!isFinite(y)) continue;
+        lines.push(
+          <Line
+            key={`h-${y}`}
+            points={[leftEdge, y, rightEdge, y]}
+            stroke="#ddd"
+            strokeWidth={1 / safeScale}
+          />
+        );
+      }
+    }
+    
+    return lines;
+  };
+
+  const getRandomColor = (alpha = 1) => {
+    const r = Math.floor(Math.random() * 200 + 55);
+    const g = Math.floor(Math.random() * 200 + 55);
+    const b = Math.floor(Math.random() * 200 + 55);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  // Render preview room when in placement mode
+  const renderPreviewRoom = () => {
+    if (!isPlacingRoom) return null;
+    
+    const { gridX, gridY } = previewRoomPosition;
+    const x = gridX * floorPlan.gridSizeWidth;
+    const y = gridY * floorPlan.gridSizeHeight;
+    
+    // Check if cell is occupied
+    const isOccupied = floorPlan.rooms.some(room => 
+      room.gridX === gridX && room.gridY === gridY
+    );
+    
+    // Render a preview rectangle
+    return (
+      <Rect
+        x={x}
+        y={y}
+        width={floorPlan.gridSizeWidth}
+        height={floorPlan.gridSizeHeight}
+        stroke={isOccupied ? 'red' : '#1890ff'}
+        strokeWidth={2}
+        dash={[5, 5]}
+        fill={isOccupied ? 'rgba(255, 0, 0, 0.1)' : 'rgba(24, 144, 255, 0.1)'}
+        onClick={() => {
+          if (!isOccupied) {
+            placeRoomAtGridPosition(gridX, gridY);
+            setIsPlacingRoom(false);
+          } else {
+            alert(`Cannot place room here - cell is already occupied`);
+          }
+        }}
+      />
+    );
+  };
+
+  // Add an effect to ensure isDraggingRoom is always reset
+  useEffect(() => {
+    return () => {
+      // This will run when the component unmounts or when dependencies change
+      // Ensures we don't leave the app in a broken state
+      setIsDraggingRoom(false);
+    };
+  }, []);
 
   // Wall drawing handlers
   const handleWallDrawingStart = (roomId: string, x: number, y: number, existingVertexId?: string) => {
@@ -1173,14 +2060,75 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const length = Math.sqrt(dx * dx + dy * dy);
     
     if (length > 10) { // Minimum 10px length
-      addWallToRoom(
-        wallStartPoint.roomId,
-        wallStartPoint.vertexId || null,
-        wallPreview.startX,
-        wallPreview.startY,
-        wallPreview.endX,
-        wallPreview.endY
-      );
+      const wallId = `wall-${uuidv4()}`;
+      const roomId = wallStartPoint.roomId;
+      
+      // Find the room
+      const updatedRooms = floorPlan.rooms.map(room => {
+        if (room.id === roomId) {
+          // Check if we have an existing vertex to start from
+          let startVertex: VertexType | null = null;
+          if (wallStartPoint.vertexId) {
+            startVertex = room.vertices.find(v => v.id === wallStartPoint.vertexId) || null;
+          }
+          
+          // Check if there's an existing vertex near the end point
+          const endVertexSensitivity = 10; // pixels
+          let endVertex: VertexType | null = null;
+          
+          for (const vertex of room.vertices) {
+            const dx = vertex.x - wallPreview.endX;
+            const dy = vertex.y - wallPreview.endY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < endVertexSensitivity) {
+              endVertex = vertex;
+            }
+          }
+          
+          // Create vertices as needed
+          const newVertices: VertexType[] = [];
+          
+          if (!startVertex) {
+            startVertex = {
+              id: `vertex-${uuidv4()}`,
+              x: wallPreview.startX,
+              y: wallPreview.startY
+            };
+            newVertices.push(startVertex);
+          }
+          
+          if (!endVertex) {
+            endVertex = {
+              id: `vertex-${uuidv4()}`,
+              x: wallPreview.endX,
+              y: wallPreview.endY
+            };
+            newVertices.push(endVertex);
+          }
+          
+          // Create the new wall
+          const newWall: WallType = {
+            id: wallId,
+            vertexIds: [startVertex.id, endVertex.id]
+          };
+          
+          return {
+            ...room,
+            walls: [...room.walls, newWall],
+            vertices: [...room.vertices, ...newVertices]
+          };
+        }
+        return room;
+      });
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
       
       // After adding the wall, disable wall placement mode
       if (setIsWallPlacementActive) {
@@ -1192,87 +2140,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setIsDrawingWall(false);
     setWallStartPoint(null);
     setWallPreview(null);
-  };
-
-  // Update canvas event handlers to handle wall drawing
-  const handleCanvasClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    
-    // Get pointer position in canvas coordinates
-    const pointerPosition = stage.getPointerPosition();
-    if (!pointerPosition) return;
-    
-    // Convert to world coordinates
-    const worldPos = {
-      x: (pointerPosition.x - position.x) / scale,
-      y: (pointerPosition.y - position.y) / scale
-    };
-    
-    // Calculate grid coordinates
-    const gridX = Math.floor(worldPos.x / floorPlan.gridSizeWidth);
-    const gridY = Math.floor(worldPos.y / floorPlan.gridSizeHeight);
-    
-    // If we're placing a room, place it at the clicked position
-    if (isPlacingRoom) {
-      placeRoomAtGridPosition(gridX, gridY);
-      setIsPlacingRoom(false);
-      return;
-    }
-    
-    // If wall placement is active, check if click is inside the selected room
-    if (isWallPlacementActive && selectedId) {
-      const selectedRoom = floorPlan.rooms.find(room => room.id === selectedId);
-      if (selectedRoom && 
-          worldPos.x >= selectedRoom.x && 
-          worldPos.x <= selectedRoom.x + selectedRoom.width && 
-          worldPos.y >= selectedRoom.y && 
-          worldPos.y <= selectedRoom.y + selectedRoom.height) {
-        handleWallDrawingStart(selectedId, worldPos.x, worldPos.y);
-        return; // Don't do deselection if we're starting to draw a wall
-      }
-    }
-    
-    // If we reach here, handle deselection if clicking on empty space
-    if (e.target === e.target.getStage()) {
-      handleDeselect(e);
-    }
-  };
-
-  const handleCanvasMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    
-    // Get pointer position in canvas coordinates
-    const pointerPosition = stage.getPointerPosition();
-    if (!pointerPosition) return;
-    
-    // Convert to world coordinates
-    const worldPos = {
-      x: (pointerPosition.x - position.x) / scale,
-      y: (pointerPosition.y - position.y) / scale
-    };
-    
-    // If we're in room placement mode, update preview position
-    if (isPlacingRoom) {
-      // Calculate grid position
-      const gridX = Math.floor(worldPos.x / floorPlan.gridSizeWidth);
-      const gridY = Math.floor(worldPos.y / floorPlan.gridSizeHeight);
-      
-      setPreviewRoomPosition({ gridX, gridY });
-    }
-    
-    // If we're drawing a wall, update the wall preview
-    if (isDrawingWall) {
-      handleWallDrawingMove(worldPos.x, worldPos.y);
-    }
-  };
-
-  // Handle stage mouseup to end wall drawing
-  const handleStageMouseUp = () => {
-    if (isDrawingWall) {
-      handleWallDrawingEnd();
-    }
   };
 
   // Render wall preview during drawing
@@ -1300,107 +2167,6 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       </Group>
     );
   };
-
-  const renderGrid = () => {
-    const { gridSizeWidth, gridSizeHeight } = floorPlan;
-    const lines = [];
-    
-    // Calculate the visible area in grid coordinates
-    // Guard against extreme scale values that could cause NaN
-    const safeScale = Math.max(0.0001, scale);
-    
-    const leftEdge = Math.floor(-position.x / safeScale / gridSizeWidth) * gridSizeWidth - gridSizeWidth;
-    const topEdge = Math.floor(-position.y / safeScale / gridSizeHeight) * gridSizeHeight - gridSizeHeight;
-    const rightEdge = Math.ceil((width - position.x) / safeScale / gridSizeWidth) * gridSizeWidth + gridSizeWidth;
-    const bottomEdge = Math.ceil((height - position.y) / safeScale / gridSizeHeight) * gridSizeHeight + gridSizeHeight;
-    
-    // Safety check to prevent too many grid lines at extreme zoom levels
-    const gridLineLimit = 1000;
-    const hLineCount = Math.min(Math.ceil((bottomEdge - topEdge) / gridSizeHeight), gridLineLimit);
-    const vLineCount = Math.min(Math.ceil((rightEdge - leftEdge) / gridSizeWidth), gridLineLimit);
-    
-    if (hLineCount > 0 && vLineCount > 0 && isFinite(hLineCount) && isFinite(vLineCount)) {
-      // Vertical lines
-      for (let x = leftEdge; x <= rightEdge; x += gridSizeWidth) {
-        if (!isFinite(x)) continue;
-        lines.push(
-          <Line
-            key={`v-${x}`}
-            points={[x, topEdge, x, bottomEdge]}
-            stroke="#ddd"
-            strokeWidth={1 / safeScale}
-          />
-        );
-      }
-      
-      // Horizontal lines
-      for (let y = topEdge; y <= bottomEdge; y += gridSizeHeight) {
-        if (!isFinite(y)) continue;
-        lines.push(
-          <Line
-            key={`h-${y}`}
-            points={[leftEdge, y, rightEdge, y]}
-            stroke="#ddd"
-            strokeWidth={1 / safeScale}
-          />
-        );
-      }
-    }
-    
-    return lines;
-  };
-
-  const getRandomColor = (alpha = 1) => {
-    const r = Math.floor(Math.random() * 200 + 55);
-    const g = Math.floor(Math.random() * 200 + 55);
-    const b = Math.floor(Math.random() * 200 + 55);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-
-  // Render preview room when in placement mode
-  const renderPreviewRoom = () => {
-    if (!isPlacingRoom) return null;
-    
-    const { gridX, gridY } = previewRoomPosition;
-    const x = gridX * floorPlan.gridSizeWidth;
-    const y = gridY * floorPlan.gridSizeHeight;
-    
-    // Check if cell is occupied
-    const isOccupied = floorPlan.rooms.some(room => 
-      room.gridX === gridX && room.gridY === gridY
-    );
-    
-    // Render a preview rectangle
-    return (
-      <Rect
-        x={x}
-        y={y}
-        width={floorPlan.gridSizeWidth}
-        height={floorPlan.gridSizeHeight}
-        stroke={isOccupied ? 'red' : '#1890ff'}
-        strokeWidth={2}
-        dash={[5, 5]}
-        fill={isOccupied ? 'rgba(255, 0, 0, 0.1)' : 'rgba(24, 144, 255, 0.1)'}
-        onClick={() => {
-          if (!isOccupied) {
-            placeRoomAtGridPosition(gridX, gridY);
-            setIsPlacingRoom(false);
-          } else {
-            alert(`Cannot place room here - cell is already occupied`);
-          }
-        }}
-      />
-    );
-  };
-
-  // Add an effect to ensure isDraggingRoom is always reset
-  useEffect(() => {
-    return () => {
-      // This will run when the component unmounts or when dependencies change
-      // Ensures we don't leave the app in a broken state
-      setIsDraggingRoom(false);
-    };
-  }, []);
 
   return (
     <div 
@@ -1441,11 +2207,25 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             {isWallPlacementActive ? "Cancel Wall" : "Add Wall"}
           </button>
         )}
+        {selectedId && (
+          <button 
+            onClick={togglePortalPlacement}
+            className={isPortalPlacementActive ? 'active' : ''}
+          >
+            {isPortalPlacementActive ? "Cancel Portal" : "Add Portal"}
+          </button>
+        )}
         <span className="grid-info">Grid: {floorPlan.gridSizeWidth}×{floorPlan.gridSizeHeight}mm</span>
         <span className="scale-info">Scale: {(scale * 100).toFixed(0)}% ({(floorPlan.gridSizeWidth * scale).toFixed(1)}mm/cell)</span>
         {selectedId && <span className="selected-info">Room selected: {floorPlan.rooms.find(r => r.id === selectedId)?.name}</span>}
         {isPlacingRoom && <span className="placement-info">Click to place room</span>}
         {isWallPlacementActive && <span className="placement-info">Click and drag within {selectedId ? floorPlan.rooms.find(r => r.id === selectedId)?.name : 'selected room'} to create wall</span>}
+        {isPortalPlacementActive && !pendingPortalConnection && 
+          <span className="placement-info">Click and drag within {selectedId ? floorPlan.rooms.find(r => r.id === selectedId)?.name : 'selected room'} to create portal</span>
+        }
+        {pendingPortalConnection && 
+          <span className="placement-info">Now select a target room to create the connected portal</span>
+        }
         {selectedWallId && <span className="placement-info">Wall selected (Delete/Backspace to remove)</span>}
         {selectedVertexId && <span className="placement-info">Vertex selected (Drag to move, Delete/Backspace to remove)</span>}
       </div>
@@ -1455,10 +2235,16 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         {isWallPlacementActive && 
           "Click and drag to create walls. Click on existing vertices to connect walls. Press ESC to cancel."
         }
-        {!isWallPlacementActive && selectedWallId && 
+        {isPortalPlacementActive && !pendingPortalConnection && 
+          `Click and drag within ${selectedId ? floorPlan.rooms.find(r => r.id === selectedId)?.name : 'selected room'} to create portal. Press ESC to cancel.`
+        }
+        {pendingPortalConnection && 
+          "Select another room to create a connected portal. The second portal will be placed at the same relative position. Press ESC to cancel."
+        }
+        {!isWallPlacementActive && !isPortalPlacementActive && selectedWallId && 
           "Press Delete or Backspace to remove the selected wall. Ctrl+Double-click also works."
         }
-        {!isWallPlacementActive && selectedVertexId && 
+        {!isWallPlacementActive && !isPortalPlacementActive && selectedVertexId && 
           "Drag to move vertex. Press Delete to remove (only works for vertices used by one wall)."
         }
       </div>
@@ -1498,23 +2284,26 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
                 handleRoomDragEnd(roomTarget, id);
               }}
               onSizeChange={updateRoomSize}
-              onPortalAdd={addPortalToRoom}
               gridSizeWidth={floorPlan.gridSizeWidth}
               gridSizeHeight={floorPlan.gridSizeHeight}
               onDragStart={handleRoomDragStart}
               onDragEnd={() => setIsDraggingRoom(false)}
-              disableDragging={isWallPlacementActive}
+              disableDragging={isWallPlacementActive || isPortalPlacementActive}
               onWallSelect={handleWallSelect}
               onVertexSelect={handleVertexSelect}
               onVertexDrag={handleVertexDrag}
               onWallDelete={handleWallDelete}
               selectedWallId={selectedWallId}
               selectedVertexId={selectedVertexId}
+              isPortalPlacementActive={isPortalPlacementActive}
             />
           ))}
           
           {/* Wall preview */}
           {renderWallPreview()}
+          
+          {/* Portal preview */}
+          {renderPortalPreview()}
         </Layer>
       </Stage>
     </div>
