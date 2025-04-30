@@ -21,6 +21,10 @@ interface RoomProps {
   onWallDelete?: (roomId: string, wallId: string) => void;
   selectedWallId?: string | null;
   selectedVertexId?: string | null;
+  onPortalSelect?: (roomId: string, portalId: string, end: 'start' | 'end') => void;
+  onPortalDrag?: (roomId: string, portalId: string, end: 'start' | 'end', x: number, y: number) => void;
+  selectedPortalId?: string | null;
+  selectedPortalEnd?: 'start' | 'end' | null;
 }
 
 const Room: React.FC<RoomProps> = ({
@@ -40,7 +44,11 @@ const Room: React.FC<RoomProps> = ({
   onVertexDrag,
   onWallDelete,
   selectedWallId,
-  selectedVertexId
+  selectedVertexId,
+  onPortalSelect,
+  onPortalDrag,
+  selectedPortalId,
+  selectedPortalEnd
 }) => {
   const shapeRef = React.useRef<Konva.Rect>(null);
   const trRef = React.useRef<Konva.Transformer>(null);
@@ -124,6 +132,115 @@ const Room: React.FC<RoomProps> = ({
   // Function to render portals
   const renderPortals = () => {
     return portals.map((portal: PortalType) => {
+      // Check if this is an internal portal
+      if (portal.startX !== undefined && portal.startY !== undefined && 
+          portal.endX !== undefined && portal.endY !== undefined) {
+        
+        const isPortalSelected = portal.id === selectedPortalId;
+        
+        return (
+          <React.Fragment key={portal.id}>
+            <Line
+              points={[portal.startX, portal.startY, portal.endX, portal.endY]}
+              stroke={portal.connectedRoomId ? (isPortalSelected ? '#9c27b0' : 'purple') : 'red'}
+              strokeWidth={isPortalSelected ? 6 : 4}
+              lineCap="round"
+              lineJoin="round"
+              hitStrokeWidth={10} // Wider hit area for easier selection
+              onMouseEnter={() => {
+                document.body.style.cursor = 'pointer';
+              }}
+              onMouseLeave={() => {
+                document.body.style.cursor = 'default';
+              }}
+            />
+            
+            {/* Portal start vertex */}
+            <Circle
+              x={portal.startX}
+              y={portal.startY}
+              radius={isPortalSelected && selectedPortalEnd === 'start' ? 8 : 6}
+              fill={isPortalSelected && selectedPortalEnd === 'start' ? '#ff4081' : '#9c27b0'}
+              stroke={isPortalSelected && selectedPortalEnd === 'start' ? '#f50057' : '#7b1fa2'}
+              strokeWidth={2}
+              draggable={!disableDragging}
+              hitStrokeWidth={6}
+              hitRadius={10}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                onPortalSelect && onPortalSelect(id, portal.id, 'start');
+              }}
+              onTap={(e) => {
+                e.cancelBubble = true;
+                onPortalSelect && onPortalSelect(id, portal.id, 'start');
+              }}
+              onDragStart={() => {
+                onPortalSelect && onPortalSelect(id, portal.id, 'start');
+              }}
+              onDragMove={(e) => {
+                // Confine portal vertex drag within room bounds
+                const newX = Math.max(0, Math.min(width, e.target.x()));
+                const newY = Math.max(0, Math.min(height, e.target.y()));
+                e.target.position({ x: newX, y: newY });
+              }}
+              onDragEnd={(e) => {
+                const newX = Math.max(0, Math.min(width, e.target.x()));
+                const newY = Math.max(0, Math.min(height, e.target.y()));
+                onPortalDrag && onPortalDrag(id, portal.id, 'start', newX, newY);
+              }}
+              onMouseEnter={() => {
+                document.body.style.cursor = 'pointer';
+              }}
+              onMouseLeave={() => {
+                document.body.style.cursor = 'default';
+              }}
+            />
+            
+            {/* Portal end vertex */}
+            <Circle
+              x={portal.endX}
+              y={portal.endY}
+              radius={isPortalSelected && selectedPortalEnd === 'end' ? 8 : 6}
+              fill={isPortalSelected && selectedPortalEnd === 'end' ? '#ff4081' : '#9c27b0'}
+              stroke={isPortalSelected && selectedPortalEnd === 'end' ? '#f50057' : '#7b1fa2'}
+              strokeWidth={2}
+              draggable={!disableDragging}
+              hitStrokeWidth={6}
+              hitRadius={10}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                onPortalSelect && onPortalSelect(id, portal.id, 'end');
+              }}
+              onTap={(e) => {
+                e.cancelBubble = true;
+                onPortalSelect && onPortalSelect(id, portal.id, 'end');
+              }}
+              onDragStart={() => {
+                onPortalSelect && onPortalSelect(id, portal.id, 'end');
+              }}
+              onDragMove={(e) => {
+                // Confine portal vertex drag within room bounds
+                const newX = Math.max(0, Math.min(width, e.target.x()));
+                const newY = Math.max(0, Math.min(height, e.target.y()));
+                e.target.position({ x: newX, y: newY });
+              }}
+              onDragEnd={(e) => {
+                const newX = Math.max(0, Math.min(width, e.target.x()));
+                const newY = Math.max(0, Math.min(height, e.target.y()));
+                onPortalDrag && onPortalDrag(id, portal.id, 'end', newX, newY);
+              }}
+              onMouseEnter={() => {
+                document.body.style.cursor = 'pointer';
+              }}
+              onMouseLeave={() => {
+                document.body.style.cursor = 'default';
+              }}
+            />
+          </React.Fragment>
+        );
+      }
+      
+      // Otherwise render traditional wall-based portal
       // Calculate portal coordinates based on wall position and normalized position
       let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
       const portalWidth = portal.width * (portal.wallPosition === 'top' || portal.wallPosition === 'bottom' ? width : height);

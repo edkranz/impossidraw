@@ -9,6 +9,18 @@ export interface Portal {
   connectedRoomId: string | null;
   // ID of the connected portal in the other room
   connectedPortalId: string | null;
+  // For internal portals - actual coordinates within the room (not on walls)
+  // If these are defined, the portal is an internal portal rather than a wall portal
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
+  // Relative positions (as percentage of room dimensions) for keeping portals aligned
+  // when rooms are resized
+  relativeStartX?: number;
+  relativeStartY?: number;
+  relativeEndX?: number;
+  relativeEndY?: number;
 }
 
 export interface Vertex {

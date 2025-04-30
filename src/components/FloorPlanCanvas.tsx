@@ -48,6 +48,23 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   // Wall/vertex selection state
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
   const [selectedVertexId, setSelectedVertexId] = useState<string | null>(null);
+  
+  // Portal selection state
+  const [selectedPortalId, setSelectedPortalId] = useState<string | null>(null);
+  const [selectedPortalEnd, setSelectedPortalEnd] = useState<'start' | 'end' | null>(null);
+
+  // Portal placement state
+  const [isPortalPlacementActive, setIsPortalPlacementActive] = useState(false);
+  const [isDrawingPortal, setIsDrawingPortal] = useState(false);
+  const [portalStartPoint, setPortalStartPoint] = useState<{ x: number, y: number, roomId: string } | null>(null);
+  const [portalPreview, setPortalPreview] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
+  const [pendingPortal, setPendingPortal] = useState<{ 
+    roomId: string, 
+    startX: number, 
+    startY: number, 
+    endX: number, 
+    endY: number 
+  } | null>(null);
 
   // Calculate min and max zoom limits based on grid size
   const getZoomLimits = () => {
@@ -139,6 +156,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           }
           return;
         }
+        // If a portal is selected, delete it and its connection
+        else if (selectedPortalId) {
+          e.preventDefault();
+          handlePortalDelete(selectedId, selectedPortalId);
+          return;
+        }
         
         // Otherwise delete the room
         deleteRoom(selectedId);
@@ -152,6 +175,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       // Cancel wall placement mode when pressing Escape
       if (isWallPlacementActive && e.key === 'Escape' && setIsWallPlacementActive) {
         setIsWallPlacementActive(false);
+      }
+      
+      // Cancel portal placement mode when pressing Escape
+      if (isPortalPlacementActive && e.key === 'Escape') {
+        setIsPortalPlacementActive(false);
+        setPendingPortal(null);
       }
       
       // Add room shortcut - 'n' key
@@ -170,7 +199,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedId, selectedWallId, selectedVertexId, floorPlan, isPlacingRoom, isWallPlacementActive]);
+  }, [selectedId, selectedWallId, selectedVertexId, selectedPortalId, floorPlan, isPlacingRoom, isWallPlacementActive, isPortalPlacementActive]);
 
   // Add body class to prevent scrolling
   useEffect(() => {
@@ -355,7 +384,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   const handleDeselect = (e: any) => {
     // Don't deselect if we're in wall placement mode and drawing a wall
-    if (isWallPlacementActive && isDrawingWall) {
+    if ((isWallPlacementActive && isDrawingWall) || (isPortalPlacementActive && isDrawingPortal)) {
+      return;
+    }
+    
+    // Don't deselect if we have a pending portal
+    if (pendingPortal) {
       return;
     }
     
@@ -371,6 +405,12 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       // If wall placement is active, deactivate it
       if (isWallPlacementActive && setIsWallPlacementActive) {
         setIsWallPlacementActive(false);
+      }
+      
+      // If portal placement is active, deactivate it
+      if (isPortalPlacementActive) {
+        setIsPortalPlacementActive(false);
+        setPendingPortal(null);
       }
     }
   };
@@ -759,6 +799,28 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       if (isPlacingRoom) {
         setIsPlacingRoom(false);
       }
+      // Cancel portal placement if active
+      if (isPortalPlacementActive) {
+        setIsPortalPlacementActive(false);
+        setPendingPortal(null);
+      }
+    }
+  };
+
+  // Toggle portal placement mode
+  const togglePortalPlacement = () => {
+    setIsPortalPlacementActive(!isPortalPlacementActive);
+    // Cancel room placement if active
+    if (isPlacingRoom) {
+      setIsPlacingRoom(false);
+    }
+    // Cancel wall placement if active
+    if (isWallPlacementActive && setIsWallPlacementActive) {
+      setIsWallPlacementActive(false);
+    }
+    // Clear pending portal if canceling
+    if (isPortalPlacementActive) {
+      setPendingPortal(null);
     }
   };
 
@@ -817,7 +879,30 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         // Select this vertex and clear other selections
         setSelectedVertexId(vertexId);
         setSelectedWallId(null);
+        setSelectedPortalId(null);
+        setSelectedPortalEnd(null);
       }
+    }
+  };
+
+  // Handle portal selection
+  const handlePortalSelect = (roomId: string, portalId: string, end: 'start' | 'end') => {
+    // Handle event propagation
+    if (selectedId !== roomId) {
+      // If clicking a portal in a different room, select that room first
+      setSelectedId(roomId);
+    }
+    
+    if (selectedPortalId === portalId && selectedPortalEnd === end) {
+      // Deselect if already selected
+      setSelectedPortalId(null);
+      setSelectedPortalEnd(null);
+    } else {
+      // Select this portal and clear other selections
+      setSelectedPortalId(portalId);
+      setSelectedPortalEnd(end);
+      setSelectedWallId(null);
+      setSelectedVertexId(null);
     }
   };
 
@@ -931,6 +1016,127 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       setFloorPlan(updatedFloorPlan);
       addToHistory(updatedFloorPlan);
     }
+  };
+
+  // Handle portal drag
+  const handlePortalDrag = (roomId: string, portalId: string, end: 'start' | 'end', newX: number, newY: number) => {
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    const portal = room.portals.find(p => p.id === portalId);
+    if (!portal || !portal.startX || !portal.endX || !portal.startY || !portal.endY) return;
+    
+    // Calculate new relative positions
+    const newRelativeX = newX / room.width;
+    const newRelativeY = newY / room.height;
+    
+    // Update this portal
+    let updatedPortal: PortalType;
+    if (end === 'start') {
+      updatedPortal = {
+        ...portal,
+        startX: newX,
+        startY: newY,
+        relativeStartX: newRelativeX,
+        relativeStartY: newRelativeY
+      };
+    } else {
+      updatedPortal = {
+        ...portal,
+        endX: newX,
+        endY: newY,
+        relativeEndX: newRelativeX,
+        relativeEndY: newRelativeY
+      };
+    }
+    
+    // Find the connected room and portal
+    const connectedRoomId = portal.connectedRoomId;
+    const connectedPortalId = portal.connectedPortalId;
+    
+    if (!connectedRoomId || !connectedPortalId) {
+      // If this portal isn't connected, just update it
+      const updatedRooms = floorPlan.rooms.map(r => {
+        if (r.id === roomId) {
+          return {
+            ...r,
+            portals: r.portals.map(p => p.id === portalId ? updatedPortal : p)
+          };
+        }
+        return r;
+      });
+      
+      const updatedFloorPlan = {
+        ...floorPlan,
+        rooms: updatedRooms
+      };
+      
+      setFloorPlan(updatedFloorPlan);
+      addToHistory(updatedFloorPlan);
+      return;
+    }
+    
+    // Find the connected room and portal
+    const connectedRoom = floorPlan.rooms.find(r => r.id === connectedRoomId);
+    if (!connectedRoom) return;
+    
+    const connectedPortal = connectedRoom.portals.find(p => p.id === connectedPortalId);
+    if (!connectedPortal || !connectedPortal.startX || !connectedPortal.endX || 
+        !connectedPortal.startY || !connectedPortal.endY) return;
+    
+    // Calculate the position in the connected room
+    const connectedX = end === 'start' 
+      ? newRelativeX * connectedRoom.width 
+      : newRelativeX * connectedRoom.width;
+    
+    const connectedY = end === 'start' 
+      ? newRelativeY * connectedRoom.height 
+      : newRelativeY * connectedRoom.height;
+    
+    // Update the connected portal
+    let updatedConnectedPortal: PortalType;
+    if (end === 'start') {
+      updatedConnectedPortal = {
+        ...connectedPortal,
+        startX: connectedX,
+        startY: connectedY,
+        relativeStartX: newRelativeX,
+        relativeStartY: newRelativeY
+      };
+    } else {
+      updatedConnectedPortal = {
+        ...connectedPortal,
+        endX: connectedX,
+        endY: connectedY,
+        relativeEndX: newRelativeX,
+        relativeEndY: newRelativeY
+      };
+    }
+    
+    // Update both portals
+    const updatedRooms = floorPlan.rooms.map(r => {
+      if (r.id === roomId) {
+        return {
+          ...r,
+          portals: r.portals.map(p => p.id === portalId ? updatedPortal : p)
+        };
+      }
+      if (r.id === connectedRoomId) {
+        return {
+          ...r,
+          portals: r.portals.map(p => p.id === connectedPortalId ? updatedConnectedPortal : p)
+        };
+      }
+      return r;
+    });
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
   };
 
   // Handle wall deletion
@@ -1194,6 +1400,83 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setWallPreview(null);
   };
 
+  // Portal drawing handlers
+  const handlePortalDrawingStart = (roomId: string, x: number, y: number) => {
+    if (!isPortalPlacementActive) return;
+    
+    // Only allow portal drawing in the selected room
+    if (selectedId !== roomId) return;
+    
+    // Find the room
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Convert global coordinates to room-local coordinates
+    const localX = x - room.x;
+    const localY = y - room.y;
+    
+    // Ensure the point is within room bounds
+    if (localX < 0 || localX > room.width || localY < 0 || localY > room.height) return;
+    
+    setIsDrawingPortal(true);
+    setPortalStartPoint({ 
+      x: localX, 
+      y: localY, 
+      roomId
+    });
+    setPortalPreview({ 
+      startX: localX, 
+      startY: localY, 
+      endX: localX, 
+      endY: localY 
+    });
+  };
+  
+  const handlePortalDrawingMove = (x: number, y: number) => {
+    if (!isDrawingPortal || !portalStartPoint) return;
+    
+    // Find the room
+    const room = floorPlan.rooms.find(r => r.id === portalStartPoint.roomId);
+    if (!room) return;
+    
+    // Convert global coordinates to room-local coordinates
+    const localX = Math.max(0, Math.min(room.width, x - room.x));
+    const localY = Math.max(0, Math.min(room.height, y - room.y));
+    
+    // Update portal preview
+    setPortalPreview({
+      startX: portalStartPoint.x,
+      startY: portalStartPoint.y,
+      endX: localX,
+      endY: localY
+    });
+  };
+  
+  const handlePortalDrawingEnd = () => {
+    if (!isDrawingPortal || !portalStartPoint || !portalPreview) return;
+    
+    // Check if portal has a minimum length
+    const dx = portalPreview.endX - portalPreview.startX;
+    const dy = portalPreview.endY - portalPreview.startY;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    
+    if (length > 10) { // Minimum 10px length
+      // Store the pending portal for further processing
+      setPendingPortal({
+        roomId: portalStartPoint.roomId,
+        startX: portalPreview.startX,
+        startY: portalPreview.startY,
+        endX: portalPreview.endX,
+        endY: portalPreview.endY
+      });
+    }
+    
+    // Reset portal drawing state
+    setIsDrawingPortal(false);
+    setPortalStartPoint(null);
+    setPortalPreview(null);
+  };
+
   // Update canvas event handlers to handle wall drawing
   const handleCanvasClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const stage = stageRef.current;
@@ -1233,6 +1516,19 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       }
     }
     
+    // If portal placement is active, check if click is inside the selected room
+    if (isPortalPlacementActive && selectedId) {
+      const selectedRoom = floorPlan.rooms.find(room => room.id === selectedId);
+      if (selectedRoom && 
+          worldPos.x >= selectedRoom.x && 
+          worldPos.x <= selectedRoom.x + selectedRoom.width && 
+          worldPos.y >= selectedRoom.y && 
+          worldPos.y <= selectedRoom.y + selectedRoom.height) {
+        handlePortalDrawingStart(selectedId, worldPos.x, worldPos.y);
+        return; // Don't do deselection if we're starting to draw a portal
+      }
+    }
+    
     // If we reach here, handle deselection if clicking on empty space
     if (e.target === e.target.getStage()) {
       handleDeselect(e);
@@ -1266,12 +1562,21 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     if (isDrawingWall) {
       handleWallDrawingMove(worldPos.x, worldPos.y);
     }
+    
+    // If we're drawing a portal, update the portal preview
+    if (isDrawingPortal) {
+      handlePortalDrawingMove(worldPos.x, worldPos.y);
+    }
   };
 
   // Handle stage mouseup to end wall drawing
   const handleStageMouseUp = () => {
     if (isDrawingWall) {
       handleWallDrawingEnd();
+    }
+    
+    if (isDrawingPortal) {
+      handlePortalDrawingEnd();
     }
   };
 
@@ -1402,6 +1707,220 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     };
   }, []);
 
+  // Create a new portal between two rooms
+  const createConnectedPortals = (sourceRoomId: string, targetRoomId: string, sourcePath: { x1: number, y1: number, x2: number, y2: number }) => {
+    const sourceRoom = floorPlan.rooms.find(r => r.id === sourceRoomId);
+    const targetRoom = floorPlan.rooms.find(r => r.id === targetRoomId);
+    
+    if (!sourceRoom || !targetRoom) return;
+    
+    // Generate unique IDs for both portals
+    const sourcePortalId = `portal-${uuidv4()}`;
+    const targetPortalId = `portal-${uuidv4()}`;
+    
+    // Calculate relative positions within the rooms (as percentages)
+    const sourceStartRelative = {
+      x: sourcePath.x1 / sourceRoom.width,
+      y: sourcePath.y1 / sourceRoom.height
+    };
+    
+    const sourceEndRelative = {
+      x: sourcePath.x2 / sourceRoom.width,
+      y: sourcePath.y2 / sourceRoom.height
+    };
+    
+    // Calculate the same relative positions in the target room
+    const targetStartX = sourceStartRelative.x * targetRoom.width;
+    const targetStartY = sourceStartRelative.y * targetRoom.height;
+    const targetEndX = sourceEndRelative.x * targetRoom.width;
+    const targetEndY = sourceEndRelative.y * targetRoom.height;
+    
+    // Create the new portals with connections
+    const sourcePortal: PortalType = {
+      id: sourcePortalId,
+      wallPosition: 'top', // Default, not used for internal portals
+      position: 0, // Default, not used for internal portals
+      width: 0.1, // Default, not used for internal portals
+      connectedRoomId: targetRoomId,
+      connectedPortalId: targetPortalId,
+      // Internal portal coordinates
+      startX: sourcePath.x1,
+      startY: sourcePath.y1,
+      endX: sourcePath.x2,
+      endY: sourcePath.y2,
+      // Store relative positions for maintaining portal positions during room resizing
+      relativeStartX: sourceStartRelative.x,
+      relativeStartY: sourceStartRelative.y,
+      relativeEndX: sourceEndRelative.x,
+      relativeEndY: sourceEndRelative.y
+    };
+    
+    const targetPortal: PortalType = {
+      id: targetPortalId,
+      wallPosition: 'top', // Default, not used for internal portals
+      position: 0, // Default, not used for internal portals
+      width: 0.1, // Default, not used for internal portals
+      connectedRoomId: sourceRoomId,
+      connectedPortalId: sourcePortalId,
+      // Internal portal coordinates
+      startX: targetStartX,
+      startY: targetStartY,
+      endX: targetEndX,
+      endY: targetEndY,
+      // Store relative positions for maintaining portal positions during room resizing
+      relativeStartX: sourceStartRelative.x,
+      relativeStartY: sourceStartRelative.y,
+      relativeEndX: sourceEndRelative.x,
+      relativeEndY: sourceEndRelative.y
+    };
+    
+    // Update the floor plan with new portals
+    const updatedRooms = floorPlan.rooms.map(room => {
+      if (room.id === sourceRoomId) {
+        return {
+          ...room,
+          portals: [...room.portals, sourcePortal]
+        };
+      } else if (room.id === targetRoomId) {
+        return {
+          ...room,
+          portals: [...room.portals, targetPortal]
+        };
+      }
+      return room;
+    });
+    
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+    
+    // Clear the pending portal state
+    setPendingPortal(null);
+    
+    // Automatically exit portal placement mode
+    setIsPortalPlacementActive(false);
+  };
+
+  // Render portal preview during drawing
+  const renderPortalPreview = () => {
+    if (!isDrawingPortal || !portalStartPoint || !portalPreview) return null;
+    
+    const room = floorPlan.rooms.find(r => r.id === portalStartPoint.roomId);
+    if (!room) return null;
+    
+    return (
+      <Group>
+        <Line
+          x={room.x}
+          y={room.y}
+          points={[
+            portalPreview.startX,
+            portalPreview.startY,
+            portalPreview.endX,
+            portalPreview.endY
+          ]}
+          stroke="purple"
+          strokeWidth={3}
+          dash={[5, 5]}
+        />
+      </Group>
+    );
+  };
+
+  // Render target room selection UI when a portal is pending
+  const renderRoomSelectionUI = () => {
+    if (!pendingPortal) return null;
+    
+    // Filter rooms that are not the source room
+    const availableRooms = floorPlan.rooms.filter(room => room.id !== pendingPortal.roomId);
+    
+    return (
+      <div className="room-selection-ui">
+        <div className="selection-overlay" onClick={() => setPendingPortal(null)} />
+        <div className="selection-modal">
+          <h3>Select Room to Connect Portal</h3>
+          <p>Choose which room this portal connects to:</p>
+          <div className="room-selection-list">
+            {availableRooms.map(room => (
+              <button
+                key={room.id}
+                onClick={() => {
+                  createConnectedPortals(
+                    pendingPortal.roomId,
+                    room.id,
+                    {
+                      x1: pendingPortal.startX,
+                      y1: pendingPortal.startY,
+                      x2: pendingPortal.endX,
+                      y2: pendingPortal.endY
+                    }
+                  );
+                }}
+                style={{ backgroundColor: room.color }}
+              >
+                {room.name}
+              </button>
+            ))}
+          </div>
+          <button className="cancel-btn" onClick={() => setPendingPortal(null)}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Handle portal delete
+  const handlePortalDelete = (roomId: string, portalId: string) => {
+    const room = floorPlan.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Find the portal
+    const portal = room.portals.find(p => p.id === portalId);
+    if (!portal) return;
+    
+    // Find the connected room and portal
+    const connectedRoomId = portal.connectedRoomId;
+    const connectedPortalId = portal.connectedPortalId;
+    
+    // Update rooms, removing the portals
+    let updatedRooms = floorPlan.rooms.map(r => {
+      if (r.id === roomId) {
+        return {
+          ...r,
+          portals: r.portals.filter(p => p.id !== portalId)
+        };
+      }
+      
+      // Also remove the connected portal from the other room if it exists
+      if (connectedRoomId && r.id === connectedRoomId) {
+        return {
+          ...r,
+          portals: r.portals.filter(p => p.id !== connectedPortalId)
+        };
+      }
+      
+      return r;
+    });
+    
+    // Update the floor plan
+    const updatedFloorPlan = {
+      ...floorPlan,
+      rooms: updatedRooms
+    };
+    
+    setFloorPlan(updatedFloorPlan);
+    addToHistory(updatedFloorPlan);
+    
+    // Clear selection
+    setSelectedPortalId(null);
+    setSelectedPortalEnd(null);
+  };
+
   return (
     <div 
       className="floor-plan-canvas-container" 
@@ -1441,6 +1960,14 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             {isWallPlacementActive ? "Cancel Wall" : "Add Wall"}
           </button>
         )}
+        {selectedId && (
+          <button 
+            onClick={togglePortalPlacement}
+            className={isPortalPlacementActive ? 'active' : ''}
+          >
+            {isPortalPlacementActive ? "Cancel Portal" : "Add Portal"}
+          </button>
+        )}
         <span className="grid-info">Grid: {floorPlan.gridSizeWidth}×{floorPlan.gridSizeHeight}mm</span>
         <span className="scale-info">Scale: {(scale * 100).toFixed(0)}% ({(floorPlan.gridSizeWidth * scale).toFixed(1)}mm/cell)</span>
         {selectedId && <span className="selected-info">Room selected: {floorPlan.rooms.find(r => r.id === selectedId)?.name}</span>}
@@ -1455,11 +1982,17 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         {isWallPlacementActive && 
           "Click and drag to create walls. Click on existing vertices to connect walls. Press ESC to cancel."
         }
-        {!isWallPlacementActive && selectedWallId && 
+        {isPortalPlacementActive && 
+          "Click and drag to create a portal within a room. After drawing, select which room to connect to. Press ESC to cancel."
+        }
+        {!isWallPlacementActive && !isPortalPlacementActive && selectedWallId && 
           "Press Delete or Backspace to remove the selected wall. Ctrl+Double-click also works."
         }
-        {!isWallPlacementActive && selectedVertexId && 
+        {!isWallPlacementActive && !isPortalPlacementActive && selectedVertexId && 
           "Drag to move vertex. Press Delete to remove (only works for vertices used by one wall)."
+        }
+        {!isWallPlacementActive && !isPortalPlacementActive && selectedPortalId && 
+          "Drag portal vertices to reshape the portal. Changes will be mirrored in the connected room. Press Delete to remove the portal connection."
         }
       </div>
       <Stage 
@@ -1503,20 +2036,30 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               gridSizeHeight={floorPlan.gridSizeHeight}
               onDragStart={handleRoomDragStart}
               onDragEnd={() => setIsDraggingRoom(false)}
-              disableDragging={isWallPlacementActive}
+              disableDragging={isWallPlacementActive || isPortalPlacementActive}
               onWallSelect={handleWallSelect}
               onVertexSelect={handleVertexSelect}
               onVertexDrag={handleVertexDrag}
               onWallDelete={handleWallDelete}
               selectedWallId={selectedWallId}
               selectedVertexId={selectedVertexId}
+              onPortalSelect={handlePortalSelect}
+              onPortalDrag={handlePortalDrag}
+              selectedPortalId={selectedPortalId}
+              selectedPortalEnd={selectedPortalEnd}
             />
           ))}
           
           {/* Wall preview */}
           {renderWallPreview()}
+          
+          {/* Portal preview */}
+          {renderPortalPreview()}
         </Layer>
       </Stage>
+      
+      {/* Room selection UI when a portal is pending */}
+      {renderRoomSelectionUI()}
     </div>
   );
 };
