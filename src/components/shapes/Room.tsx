@@ -10,7 +10,6 @@ interface RoomProps {
   onSelect: (id: string) => void;
   onPositionChange: (id: string, newX: number, newY: number) => void;
   onSizeChange: (id: string, newWidth: number, newHeight: number) => void;
-  onPortalAdd?: (roomId: string, wallPosition: 'top' | 'right' | 'bottom' | 'left', position: number) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
   gridSizeWidth: number;
@@ -22,6 +21,7 @@ interface RoomProps {
   onWallDelete?: (roomId: string, wallId: string) => void;
   selectedWallId?: string | null;
   selectedVertexId?: string | null;
+  isPortalPlacementActive?: boolean;
 }
 
 const Room: React.FC<RoomProps> = ({
@@ -30,7 +30,6 @@ const Room: React.FC<RoomProps> = ({
   onSelect,
   onPositionChange,
   onSizeChange,
-  onPortalAdd,
   onDragStart,
   onDragEnd,
   gridSizeWidth,
@@ -41,7 +40,8 @@ const Room: React.FC<RoomProps> = ({
   onVertexDrag,
   onWallDelete,
   selectedWallId,
-  selectedVertexId
+  selectedVertexId,
+  isPortalPlacementActive = false
 }) => {
   const shapeRef = React.useRef<Konva.Rect>(null);
   const trRef = React.useRef<Konva.Transformer>(null);
@@ -335,52 +335,6 @@ const Room: React.FC<RoomProps> = ({
     }
   }, [isDraggingVertex]);
 
-  // Double click handler for adding new portals
-  const handleDoubleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (!onPortalAdd) return;
-    
-    const rect = shapeRef.current;
-    if (!rect) return;
-
-    // Get the position relative to the room
-    const stage = rect.getStage();
-    if (!stage) return;
-
-    const pointerPosition = stage.getPointerPosition();
-    if (!pointerPosition) return;
-    
-    // Convert global position to local position
-    const localPos = {
-      x: pointerPosition.x - rect.x(),
-      y: pointerPosition.y - rect.y()
-    };
-
-    // Determine which wall was clicked
-    const tolerance = 10; // pixels
-    let wallPosition: 'top' | 'right' | 'bottom' | 'left' | null = null;
-    let position = 0;
-
-    if (localPos.y < tolerance) {
-      wallPosition = 'top';
-      position = Math.max(0, Math.min(1, localPos.x / width));
-    } else if (localPos.x > width - tolerance) {
-      wallPosition = 'right';
-      position = Math.max(0, Math.min(1, localPos.y / height));
-    } else if (localPos.y > height - tolerance) {
-      wallPosition = 'bottom';
-      position = Math.max(0, Math.min(1, localPos.x / width));
-    } else if (localPos.x < tolerance) {
-      wallPosition = 'left';
-      position = Math.max(0, Math.min(1, localPos.y / height));
-    }
-
-    if (wallPosition) {
-      // Call the portal add function with traditional wall position format
-      // The FloorPlanCanvas component will handle conversion to wall-based portals
-      onPortalAdd(id, wallPosition, position);
-    }
-  };
-
   // Render grid cell preview during drag
   const renderGridPreview = () => {
     if (!isDragging) return null;
@@ -449,13 +403,8 @@ const Room: React.FC<RoomProps> = ({
         shadowColor={isSelected ? '#1890ff' : undefined}
         shadowBlur={isSelected ? 6 : 0}
         shadowOpacity={isSelected ? 0.3 : 0}
-        onClick={(e) => {
-          // Clicking the room background should clear wall and vertex selections
-          onSelect(id);
-        }}
+        onClick={() => onSelect(id)}
         onTap={() => onSelect(id)}
-        onDblClick={handleDoubleClick}
-        onDblTap={handleDoubleClick}
         ref={shapeRef}
         draggable={!disableDragging}
         strokeScaleEnabled={false}
