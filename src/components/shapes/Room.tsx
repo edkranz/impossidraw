@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Rect, Group, Text, Line, Circle } from 'react-konva';
 import Konva from 'konva';
 import { Room as RoomType, Portal as PortalType, Wall as WallType, Vertex as VertexType } from '../../types/Room';
+import { isPortal, getWallVertices } from '../../utils/drawingUtils';
 
 interface RoomProps {
   room: RoomType;
@@ -121,162 +122,175 @@ const Room: React.FC<RoomProps> = ({
     // The shape's position is already being updated by Konva drag behavior
   };
 
-  // Function to render portals
-  const renderPortals = () => {
-    return portals.map((portal: PortalType) => {
-      // Calculate portal coordinates based on wall position and normalized position
-      let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-      const portalWidth = portal.width * (portal.wallPosition === 'top' || portal.wallPosition === 'bottom' ? width : height);
-      const offset = portal.position * (portal.wallPosition === 'top' || portal.wallPosition === 'bottom' ? width : height);
-      
-      switch (portal.wallPosition) {
-        case 'top':
-          x1 = offset;
-          y1 = 0;
-          x2 = offset + portalWidth;
-          y2 = 0;
-          break;
-        case 'right':
-          x1 = width;
-          y1 = offset;
-          x2 = width;
-          y2 = offset + portalWidth;
-          break;
-        case 'bottom':
-          x1 = offset;
-          y1 = height;
-          x2 = offset + portalWidth;
-          y2 = height;
-          break;
-        case 'left':
-          x1 = 0;
-          y1 = offset;
-          x2 = 0;
-          y2 = offset + portalWidth;
-          break;
-      }
-
-      return (
-        <Line
-          key={portal.id}
-          points={[x1, y1, x2, y2]}
-          stroke={portal.connectedRoomId ? 'green' : 'red'}
-          strokeWidth={4}
-          lineCap="round"
-          lineJoin="round"
-        />
-      );
-    });
-  };
-
-  // Function to render walls using vertices
+  // Function to render all walls and portals
   const renderWalls = () => {
-    return walls.map((wall: WallType) => {
-      // Find vertices for this wall
-      const wallVertices = wall.vertexIds
-        .map(vertexId => vertices.find(vertex => vertex.id === vertexId))
-        .filter(vertex => vertex) as VertexType[];
-      
-      if (wallVertices.length < 2) return null;
-      
-      // Create points array for the line
-      const points: number[] = [];
-      wallVertices.forEach(vertex => {
-        points.push(vertex.x, vertex.y);
-      });
-      
-      const isWallSelected = wall.id === selectedWallId;
-      const isWallHovered = wall.id === hoveredWallId;
+    // First render regular walls
+    const regularWalls = walls.filter(wall => !isPortal(wall));
+    const portals = walls.filter(wall => isPortal(wall)) as PortalType[];
+    
+    return (
+      <>
+        {/* Regular walls */}
+        {regularWalls.map((wall: WallType) => {
+          // Find vertices for this wall
+          const wallVertices = getWallVertices(wall, room);
+          
+          if (wallVertices.length < 2) return null;
+          
+          // Create points array for the line
+          const points: number[] = [];
+          wallVertices.forEach(vertex => {
+            points.push(vertex.x, vertex.y);
+          });
+          
+          const isWallSelected = wall.id === selectedWallId;
+          const isWallHovered = wall.id === hoveredWallId;
+          
+          return (
+            <React.Fragment key={wall.id}>
+              <Line
+                points={points}
+                stroke={isWallSelected ? "#1890ff" : (isWallHovered ? "#69c0ff" : "black")}
+                strokeWidth={isWallSelected ? 3 : (isWallHovered ? 2.5 : 2)}
+                lineCap="round"
+                lineJoin="round"
+                onClick={() => onWallSelect && onWallSelect(id, wall.id)}
+                onTap={() => onWallSelect && onWallSelect(id, wall.id)}
+                onDblClick={(e) => {
+                  // Handle double click to delete wall
+                  if (e.evt.ctrlKey || e.evt.metaKey) {
+                    onWallDelete && onWallDelete(id, wall.id);
+                  }
+                }}
+                hitStrokeWidth={10} // Wider hit area for easier selection
+                onMouseEnter={() => {
+                  document.body.style.cursor = 'pointer';
+                  setHoveredWallId(wall.id);
+                }}
+                onMouseLeave={() => {
+                  document.body.style.cursor = 'default';
+                  setHoveredWallId(null);
+                }}
+              />
+              
+              {/* Render vertices for selected walls */}
+              {renderWallVertices(wall, wallVertices)}
+            </React.Fragment>
+          );
+        })}
+        
+        {/* Portals */}
+        {portals.map((portal: PortalType) => {
+          // Find vertices for this portal
+          const portalVertices = getWallVertices(portal, room);
+          
+          if (portalVertices.length < 2) return null;
+          
+          // Create points array for the line
+          const points: number[] = [];
+          portalVertices.forEach(vertex => {
+            points.push(vertex.x, vertex.y);
+          });
+          
+          const isPortalSelected = portal.id === selectedWallId;
+          const isPortalHovered = portal.id === hoveredWallId;
+          
+          return (
+            <React.Fragment key={portal.id}>
+              <Line
+                points={points}
+                stroke={portal.connectedRoomId ? "#4CAF50" : "#FFC107"}
+                strokeWidth={isPortalSelected ? 4 : 3}
+                lineCap="round"
+                lineJoin="round"
+                dash={[5, 3]}
+                onClick={() => onWallSelect && onWallSelect(id, portal.id)}
+                onTap={() => onWallSelect && onWallSelect(id, portal.id)}
+                hitStrokeWidth={12} // Wider hit area for easier selection
+                onMouseEnter={() => {
+                  document.body.style.cursor = 'pointer';
+                  setHoveredWallId(portal.id);
+                }}
+                onMouseLeave={() => {
+                  document.body.style.cursor = 'default';
+                  setHoveredWallId(null);
+                }}
+              />
+              
+              {/* Render vertices for selected portals */}
+              {renderWallVertices(portal, portalVertices)}
+            </React.Fragment>
+          );
+        })}
+      </>
+    );
+  };
+  
+  // Function to render the vertices for a wall or portal
+  const renderWallVertices = (wall: WallType, vertices: VertexType[]) => {
+    const isWallSelected = wall.id === selectedWallId;
+    
+    // Only render vertices if this wall is selected or one of its vertices is selected
+    if (!isWallSelected && !vertices.some(v => v.id === selectedVertexId)) {
+      return null;
+    }
+    
+    return vertices.map(vertex => {
+      const isVertexSelected = vertex.id === selectedVertexId;
+      const isVertexHovered = vertex.id === hoveredVertexId;
       
       return (
-        <React.Fragment key={wall.id}>
-          <Line
-            points={points}
-            stroke={isWallSelected ? "#1890ff" : (isWallHovered ? "#69c0ff" : "black")}
-            strokeWidth={isWallSelected ? 3 : (isWallHovered ? 2.5 : 2)}
-            lineCap="round"
-            lineJoin="round"
-            onClick={() => onWallSelect && onWallSelect(id, wall.id)}
-            onTap={() => onWallSelect && onWallSelect(id, wall.id)}
-            onDblClick={(e) => {
-              // Handle double click to delete wall
-              if (e.evt.ctrlKey || e.evt.metaKey) {
-                onWallDelete && onWallDelete(id, wall.id);
-              }
-            }}
-            hitStrokeWidth={10} // Wider hit area for easier selection
-            onMouseEnter={() => {
-              document.body.style.cursor = 'pointer';
-              setHoveredWallId(wall.id);
-            }}
-            onMouseLeave={() => {
-              document.body.style.cursor = 'default';
-              setHoveredWallId(null);
-            }}
-          />
-          
-          {/* Only render vertices if this wall is selected or one of its vertices is selected */}
-          {(isWallSelected || wallVertices.some(v => v.id === selectedVertexId)) && 
-            wallVertices.map(vertex => {
-              const isVertexSelected = vertex.id === selectedVertexId;
-              const isVertexHovered = vertex.id === hoveredVertexId;
-              
-              return (
-                <Circle
-                  key={vertex.id}
-                  x={vertex.x}
-                  y={vertex.y}
-                  radius={isVertexSelected ? 6 : (isVertexHovered ? 4 : 3)}
-                  fill={isVertexSelected ? "#1890ff" : (isVertexHovered ? "#69c0ff" : (isWallSelected ? "#d9f0ff" : "#f0f0f0"))}
-                  stroke={isVertexSelected ? "#0050b3" : (isVertexHovered ? "#1890ff" : (isWallSelected ? "#69c0ff" : "#d9d9d9"))}
-                  strokeWidth={isVertexSelected || isVertexHovered ? 2 : 1}
-                  opacity={isVertexSelected || isVertexHovered ? 1 : 0.8}
-                  // Add a larger hitbox area
-                  hitStrokeWidth={6}
-                  // Set invisible hit area that's larger than the visible vertex
-                  hitRadius={8}
-                  draggable={!disableDragging}
-                  onClick={(e) => {
-                    e.cancelBubble = true; // Prevent event from bubbling to the room
-                    onVertexSelect && onVertexSelect(id, vertex.id);
-                  }}
-                  onTap={(e) => {
-                    e.cancelBubble = true;
-                    onVertexSelect && onVertexSelect(id, vertex.id);
-                  }}
-                  onDragStart={() => {
-                    setIsDraggingVertex(true);
-                  }}
-                  onDragMove={(e) => {
-                    // Confine vertex drag within room bounds
-                    const newX = Math.max(0, Math.min(width, e.target.x()));
-                    const newY = Math.max(0, Math.min(height, e.target.y()));
-                    e.target.position({ x: newX, y: newY });
-                    
-                    // Update preview lines for all walls that use this vertex
-                    renderVertexDragPreview(vertex.id, newX, newY);
-                  }}
-                  onDragEnd={(e) => {
-                    const newX = Math.max(0, Math.min(width, e.target.x()));
-                    const newY = Math.max(0, Math.min(height, e.target.y()));
-                    onVertexDrag && onVertexDrag(id, vertex.id, newX, newY);
-                    
-                    // Clear drag previews once drag is complete
-                    setIsDraggingVertex(false);
-                  }}
-                  onMouseEnter={() => {
-                    document.body.style.cursor = 'pointer';
-                    setHoveredVertexId(vertex.id);
-                  }}
-                  onMouseLeave={() => {
-                    document.body.style.cursor = 'default';
-                    setHoveredVertexId(null);
-                  }}
-                />
-              );
-            })
-          }
-        </React.Fragment>
+        <Circle
+          key={vertex.id}
+          x={vertex.x}
+          y={vertex.y}
+          radius={isVertexSelected ? 6 : (isVertexHovered ? 4 : 3)}
+          fill={isVertexSelected ? "#1890ff" : (isVertexHovered ? "#69c0ff" : (isWallSelected ? "#d9f0ff" : "#f0f0f0"))}
+          stroke={isVertexSelected ? "#0050b3" : (isVertexHovered ? "#1890ff" : (isWallSelected ? "#69c0ff" : "#d9d9d9"))}
+          strokeWidth={isVertexSelected || isVertexHovered ? 2 : 1}
+          opacity={isVertexSelected || isVertexHovered ? 1 : 0.8}
+          // Add a larger hitbox area
+          hitStrokeWidth={6}
+          // Set invisible hit area that's larger than the visible vertex
+          hitRadius={8}
+          draggable={!disableDragging}
+          onClick={(e) => {
+            e.cancelBubble = true; // Prevent event from bubbling to the room
+            onVertexSelect && onVertexSelect(id, vertex.id);
+          }}
+          onTap={(e) => {
+            e.cancelBubble = true;
+            onVertexSelect && onVertexSelect(id, vertex.id);
+          }}
+          onDragStart={() => {
+            setIsDraggingVertex(true);
+          }}
+          onDragMove={(e) => {
+            // Confine vertex drag within room bounds
+            const newX = Math.max(0, Math.min(width, e.target.x()));
+            const newY = Math.max(0, Math.min(height, e.target.y()));
+            e.target.position({ x: newX, y: newY });
+            
+            // Update preview lines for all walls that use this vertex
+            renderVertexDragPreview(vertex.id, newX, newY);
+          }}
+          onDragEnd={(e) => {
+            const newX = Math.max(0, Math.min(width, e.target.x()));
+            const newY = Math.max(0, Math.min(height, e.target.y()));
+            onVertexDrag && onVertexDrag(id, vertex.id, newX, newY);
+            
+            // Clear drag previews once drag is complete
+            setIsDraggingVertex(false);
+          }}
+          onMouseEnter={() => {
+            document.body.style.cursor = 'pointer';
+            setHoveredVertexId(vertex.id);
+          }}
+          onMouseLeave={() => {
+            document.body.style.cursor = 'default';
+            setHoveredVertexId(null);
+          }}
+        />
       );
     });
   };
@@ -361,6 +375,8 @@ const Room: React.FC<RoomProps> = ({
     }
 
     if (wallPosition) {
+      // Call the portal add function with traditional wall position format
+      // The FloorPlanCanvas component will handle conversion to wall-based portals
       onPortalAdd(id, wallPosition, position);
     }
   };
@@ -541,10 +557,9 @@ const Room: React.FC<RoomProps> = ({
         fill="#777"
       />
       
-      {/* Render portals and walls */}
+      {/* Render walls */}
       <Group x={x} y={y}>
         {renderWalls()}
-        {renderPortals()}
         
         {/* Render preview lines during vertex drag */}
         {dragPreviewLines.map((line, index) => (

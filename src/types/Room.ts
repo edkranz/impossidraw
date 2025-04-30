@@ -1,20 +1,18 @@
-export interface Portal {
-  id: string;
-  wallPosition: 'top' | 'right' | 'bottom' | 'left';
-  // Position along the wall (0-1 normalized)
-  position: number;
-  // Width of the portal (normalized 0-1)
-  width: number;
-  // ID of the connected room
+export interface Portal extends Wall {
+  // Connection information
   connectedRoomId: string | null;
   // ID of the connected portal in the other room
   connectedPortalId: string | null;
+  // Whether this is a portal (distinguishes from regular walls)
+  isPortal: true;
 }
 
 export interface Vertex {
   id: string;
   x: number;
   y: number;
+  // Optional flag to mark vertices that are part of portals
+  isPortalVertex?: boolean;
 }
 
 export interface Wall {
@@ -34,8 +32,10 @@ export interface Room {
   name: string;
   // Color for display
   color: string;
-  // List of portals in this room
+  // List of portals in this room (deprecated, use portalIds instead)
   portals: Portal[];
+  // List of portal IDs referencing objects in the walls array
+  portalIds: string[];
   // List of internal walls in this room
   walls: Wall[];
   // List of vertices used by walls in this room

@@ -562,6 +562,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       name: `Room ${floorPlan.rooms.length + 1}`,
       color: getRandomColor(0.2),
       portals: [],
+      portalIds: [],
       walls: [],
       vertices: [],
       gridX,
@@ -646,32 +647,29 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   const addPortalToRoom = (roomId: string, wallPosition: 'top' | 'right' | 'bottom' | 'left', position: number) => {
     const portalId = `portal-${uuidv4()}`;
     
+    // Import the utility function to handle portal conversions
+    const { convertLegacyPortals } = require('../utils/portalUtils');
+    
     const updatedRooms = floorPlan.rooms.map(room => {
       if (room.id === roomId) {
-        // Check if there's already a portal nearby to avoid overcrowding
-        const tooClose = room.portals.some(portal => {
-          if (portal.wallPosition !== wallPosition) return false;
-          
-          // Check if portals are within 10% of each other
-          return Math.abs(portal.position - position) < 0.1;
-        });
-        
-        if (tooClose) return room;
-        
-        return {
-          ...room,
-          portals: [
-            ...room.portals,
-            {
-              id: portalId,
-              wallPosition,
-              position,
-              width: 0.1, // Default to 10% of wall width/height
-              connectedRoomId: null,
-              connectedPortalId: null
-            }
-          ]
+        // First create a legacy portal format
+        const legacyPortal = {
+          id: portalId,
+          wallPosition,
+          position,
+          width: 0.1, // Default to 10% of wall width/height
+          connectedRoomId: null,
+          connectedPortalId: null
         };
+        
+        // Create a temporary room with the new legacy portal
+        const tempRoom = {
+          ...room,
+          portals: [...room.portals, legacyPortal]
+        };
+        
+        // Convert the legacy portal to the new wall-based format
+        return convertLegacyPortals(tempRoom);
       }
       return room;
     });
@@ -686,6 +684,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   };
 
   const handlePortalClick = (roomId: string, portalId: string) => {
+    // Import the utility function to find portals
+    const { findConnectedPortal } = require('../utils/portalUtils');
+    
     // If we're not in portal connecting mode yet
     if (!connectingPortals) {
       setConnectingPortals({ roomId, portalId });
@@ -700,41 +701,44 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     
     // Connect the two portals
     const updatedRooms = floorPlan.rooms.map(room => {
+      // Find the actual portal walls in the walls array
+      const isPortal = (wall: any) => 'isPortal' in wall && wall.isPortal === true;
+      
       // Update the first portal
       if (room.id === connectingPortals.roomId) {
-        const updatedPortals = room.portals.map(portal => {
-          if (portal.id === connectingPortals.portalId) {
+        const updatedWalls = room.walls.map(wall => {
+          if (isPortal(wall) && wall.id === connectingPortals.portalId) {
             return {
-              ...portal,
+              ...wall,
               connectedRoomId: roomId,
               connectedPortalId: portalId
             };
           }
-          return portal;
+          return wall;
         });
         
         return {
           ...room,
-          portals: updatedPortals
+          walls: updatedWalls
         };
       }
       
       // Update the second portal
       if (room.id === roomId) {
-        const updatedPortals = room.portals.map(portal => {
-          if (portal.id === portalId) {
+        const updatedWalls = room.walls.map(wall => {
+          if (isPortal(wall) && wall.id === portalId) {
             return {
-              ...portal,
+              ...wall,
               connectedRoomId: connectingPortals.roomId,
               connectedPortalId: connectingPortals.portalId
             };
           }
-          return portal;
+          return wall;
         });
         
         return {
           ...room,
-          portals: updatedPortals
+          walls: updatedWalls
         };
       }
       
