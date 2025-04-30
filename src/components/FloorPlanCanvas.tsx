@@ -1028,6 +1028,52 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const room = floorPlan.rooms.find(r => r.id === roomId);
     if (!room) return;
     
+    // Get the vertex being dragged
+    const draggedVertex = room.vertices.find(v => v.id === vertexId);
+    if (!draggedVertex) return;
+    
+    // Check if this vertex is part of a portal that has a connection
+    let connectedPortalInfo: {
+      sourceRoomId: string;
+      sourcePortalId: string;
+      targetRoomId: string;
+      targetPortalId: string;
+      draggedVertexIndex: number;
+    } | null = null;
+    
+    // Find if this vertex belongs to a portal
+    if (draggedVertex.isPortalVertex) {
+      // Find which portal this vertex belongs to
+      for (const wall of room.walls) {
+        if (wall.vertexIds.includes(vertexId) && 'isPortal' in wall) {
+          // First cast to PortalType to access portal properties
+          const portalWall = wall as PortalType;
+          if (portalWall.connectedRoomId && portalWall.connectedPortalId) {
+            // Found a portal that uses this vertex and has a connection
+            
+            // Get the connected room and portal
+            const targetRoom = floorPlan.rooms.find(r => r.id === portalWall.connectedRoomId);
+            if (targetRoom) {
+              // Find the connected portal in the target room
+              const targetPortal = targetRoom.walls.find(w => w.id === portalWall.connectedPortalId) as PortalType | undefined;
+              if (targetPortal) {
+                // Store information about the connection for later use
+                connectedPortalInfo = {
+                  sourceRoomId: roomId,
+                  sourcePortalId: portalWall.id,
+                  targetRoomId: targetRoom.id,
+                  targetPortalId: targetPortal.id,
+                  // Index of the dragged vertex in the portal's vertex array (0 or 1 for start or end)
+                  draggedVertexIndex: portalWall.vertexIds.indexOf(vertexId)
+                };
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    
     // Check if this vertex is close to any other vertex for merging
     const mergeThreshold = 15; // pixels
     let targetVertex: VertexType | null = null;
@@ -1079,17 +1125,36 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       // Remove the dragged vertex since it's now merged
       const updatedVertices = room.vertices.filter(v => v.id !== vertexId);
       
-      // Update the room with new walls and vertices
-      const updatedRooms = floorPlan.rooms.map(r => {
-        if (r.id === roomId) {
-          return {
-            ...r,
-            walls: updatedWalls,
-            vertices: updatedVertices
-          };
-        }
-        return r;
-      });
+      // If this was part of a connected portal, we need to handle the connected portal too
+      let updatedRooms;
+      if (connectedPortalInfo !== null) {
+        // We'll need to update the rooms with the merged portals
+        updatedRooms = floorPlan.rooms.map(r => {
+          if (r.id === roomId) {
+            return {
+              ...r,
+              walls: updatedWalls,
+              vertices: updatedVertices
+            };
+          }
+          
+          // Handle the connected room's portal if needed (for merging)
+          // This will need custom implementation based on the app's requirements
+          return r;
+        });
+      } else {
+        // Normal merge operation without connected portals
+        updatedRooms = floorPlan.rooms.map(r => {
+          if (r.id === roomId) {
+            return {
+              ...r,
+              walls: updatedWalls,
+              vertices: updatedVertices
+            };
+          }
+          return r;
+        });
+      }
       
       // Clear selected vertex since it no longer exists
       setSelectedVertexId(null);
@@ -1103,27 +1168,123 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       addToHistory(updatedFloorPlan);
     } else {
       // Normal vertex movement if not merging
-      const updatedRooms = floorPlan.rooms.map(room => {
-        if (room.id === roomId) {
-          // Update the vertex position
-          const updatedVertices = room.vertices.map(vertex => {
-            if (vertex.id === vertexId) {
+      // For connected portals, calculate relative movement in both rooms
+      let updatedRooms;
+      
+      if (connectedPortalInfo !== null) {
+        const sourceRoom = room; // The room with the vertex being dragged
+        const targetRoomId = connectedPortalInfo.targetRoomId;
+        const targetPortalId = connectedPortalInfo.targetPortalId;
+        const draggedVertexIndex = connectedPortalInfo.draggedVertexIndex;
+        
+        const targetRoom = floorPlan.rooms.find(r => r.id === targetRoomId);
+        
+        if (targetRoom) {
+          // Calculate how much the vertex has moved in relative terms
+          const oldVertex = sourceRoom.vertices.find(v => v.id === vertexId);
+          if (!oldVertex) return;
+          
+          // Calculate movement in relative units (0-1)
+          const relativeXMovement = (newX - oldVertex.x) / sourceRoom.width;
+          const relativeYMovement = (newY - oldVertex.y) / sourceRoom.height;
+          
+          // Find the target portal vertex that corresponds to the dragged vertex
+          const targetPortal = targetRoom.walls.find(w => w.id === targetPortalId) as PortalType | undefined;
+          if (!targetPortal) return;
+          
+          // Get the target vertex ID at the same position (first or second)
+          const targetVertexId = targetPortal.vertexIds[draggedVertexIndex];
+          
+          // Find the target vertex
+          const targetPortalVertex = targetRoom.vertices.find(v => v.id === targetVertexId);
+          if (!targetPortalVertex) return;
+          
+          // Calculate the absolute movement for the target vertex
+          const targetXMovement = relativeXMovement * targetRoom.width;
+          const targetYMovement = relativeYMovement * targetRoom.height;
+          
+          // Calculate new coordinates for the target vertex
+          const newTargetX = targetPortalVertex.x + targetXMovement;
+          const newTargetY = targetPortalVertex.y + targetYMovement;
+          
+          // Update both rooms
+          updatedRooms = floorPlan.rooms.map(r => {
+            if (r.id === roomId) {
+              // Update source room vertex
               return {
-                ...vertex,
-                x: newX,
-                y: newY
+                ...r,
+                vertices: r.vertices.map(vertex => {
+                  if (vertex.id === vertexId) {
+                    return {
+                      ...vertex,
+                      x: newX,
+                      y: newY
+                    };
+                  }
+                  return vertex;
+                })
+              };
+            } 
+            else if (r.id === targetRoom.id) {
+              // Update target room vertex
+              return {
+                ...r,
+                vertices: r.vertices.map(vertex => {
+                  if (vertex.id === targetVertexId) {
+                    return {
+                      ...vertex,
+                      x: newTargetX,
+                      y: newTargetY
+                    };
+                  }
+                  return vertex;
+                })
               };
             }
-            return vertex;
+            return r;
           });
-          
-          return {
-            ...room,
-            vertices: updatedVertices
-          };
+        } else {
+          // If target room not found, just update the source room
+          updatedRooms = floorPlan.rooms.map(room => {
+            if (room.id === roomId) {
+              return {
+                ...room,
+                vertices: room.vertices.map(vertex => {
+                  if (vertex.id === vertexId) {
+                    return {
+                      ...vertex,
+                      x: newX,
+                      y: newY
+                    };
+                  }
+                  return vertex;
+                })
+              };
+            }
+            return room;
+          });
         }
-        return room;
-      });
+      } else {
+        // Normal vertex movement without connected portals
+        updatedRooms = floorPlan.rooms.map(room => {
+          if (room.id === roomId) {
+            return {
+              ...room,
+              vertices: room.vertices.map(vertex => {
+                if (vertex.id === vertexId) {
+                  return {
+                    ...vertex,
+                    x: newX,
+                    y: newY
+                  };
+                }
+                return vertex;
+              })
+            };
+          }
+          return room;
+        });
+      }
       
       const updatedFloorPlan = {
         ...floorPlan,
