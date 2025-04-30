@@ -67,6 +67,23 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setPosition({ x: width / 2, y: height / 2 });
   }, [width, height]);
 
+  // Handle zoom slider change
+  const handleZoomSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newZoomPercent = parseFloat(e.target.value);
+    const newScale = newZoomPercent / 100;
+    
+    // Get current center point in world coordinates
+    const centerX = (width / 2 - position.x) / scale;
+    const centerY = (height / 2 - position.y) / scale;
+    
+    // Calculate new position that keeps the center point in the same world position
+    const newX = width / 2 - centerX * newScale;
+    const newY = height / 2 - centerY * newScale;
+    
+    setScale(newScale);
+    setPosition({ x: newX, y: newY });
+  };
+
   // Prevent default wheel behavior on the container
   useEffect(() => {
     const container = containerRef.current;
@@ -1404,6 +1421,17 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       }}
     >
       <div className="floor-plan-controls">
+        <div className="zoom-slider-container">
+          <input
+            type="range"
+            min={Math.round(getZoomLimits().minScale * 100)}
+            max={Math.round(getZoomLimits().maxScale * 100)}
+            value={Math.round(scale * 100)}
+            onChange={handleZoomSliderChange}
+            className="zoom-slider"
+          />
+          <span className="zoom-label">{Math.round(scale * 100)}%</span>
+        </div>
         <button onClick={addRoom}>{isPlacingRoom ? "Cancel Room" : "Add Room (n)"}</button>
         {setIsWallPlacementActive && selectedId && (
           <button 
