@@ -3,6 +3,7 @@ import { Rect, Group, Text, Line, Circle } from 'react-konva';
 import Konva from 'konva';
 import { Room as RoomType, Portal as PortalType, Wall as WallType, Vertex as VertexType } from '../../types/Room';
 import { isPortal, getWallVertices } from '../../utils/drawingUtils';
+import { getPortalColor } from '../../utils/portalUtils';
 
 interface RoomProps {
   room: RoomType;
@@ -195,15 +196,17 @@ const Room: React.FC<RoomProps> = ({
           const isPortalSelected = portal.id === selectedWallId;
           const isPortalHovered = portal.id === hoveredWallId;
           
+          // Get a consistent color for this portal
+          const portalColor = getPortalColor(portal);
+          
           return (
             <React.Fragment key={portal.id}>
               <Line
                 points={points}
-                stroke={portal.connectedRoomId ? "#4CAF50" : "#FFC107"}
-                strokeWidth={isPortalSelected ? 4 : 3}
+                stroke={portalColor}
+                strokeWidth={isPortalSelected ? 3 : (isPortalHovered ? 2.5 : 2)}
                 lineCap="round"
                 lineJoin="round"
-                dash={[5, 3]}
                 onClick={() => onWallSelect && onWallSelect(id, portal.id)}
                 onTap={() => onWallSelect && onWallSelect(id, portal.id)}
                 hitStrokeWidth={12} // Wider hit area for easier selection

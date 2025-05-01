@@ -6,6 +6,7 @@ import { Room as RoomType, Portal as PortalType, FloorPlan, Wall as WallType, Ve
 import Room from './shapes/Room';
 import '../styles/FloorPlanCanvas.css';
 import { useGesture } from '@use-gesture/react';
+import { getPortalColor } from '../utils/portalUtils';
 
 interface FloorPlanCanvasProps {
   width: number;  // Viewport width
@@ -61,7 +62,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     sourceRoomId: string;
     portalId: string;
     vertices: { x: number, y: number }[];
+    color: string | null;
   } | null>(null);
+
+  // Add state for storing the temporary portal color
+  const [pendingPortalColor, setPendingPortalColor] = useState<string | null>(null);
 
   // Calculate min and max zoom limits based on grid size
   const getZoomLimits = () => {
@@ -1400,7 +1405,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     addToHistory(updatedFloorPlan);
   };
 
-  // Portal drawing handlers - mirror wall drawing handlers
+  // Update handlePortalDrawingStart to use a temporary portal ID
   const handlePortalDrawingStart = (roomId: string, x: number, y: number, existingVertexId?: string) => {
     if (!isPortalPlacementActive) return;
     
@@ -1410,6 +1415,16 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     // Find the room in global coordinates
     const room = floorPlan.rooms.find(r => r.id === roomId);
     if (!room) return;
+    
+    // Create a temporary portal ID to use for color generation
+    const tempPortalId = `temp-portal-${uuidv4()}`;
+    setPendingPortalColor(getPortalColor({ 
+      id: tempPortalId, 
+      vertexIds: [], 
+      isPortal: true, 
+      connectedRoomId: null, 
+      connectedPortalId: null 
+    }));
     
     // Convert global coordinates to room-local coordinates
     const localX = x - room.x;
@@ -1631,13 +1646,14 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         vertices: [
           { x: portalPreview.startX, y: portalPreview.startY },
           { x: portalPreview.endX, y: portalPreview.endY }
-        ]
+        ],
+        color: pendingPortalColor
       });
       
       // Change message to instruct user to select destination room
     }
     
-    // Reset portal drawing state
+    // Reset portal drawing state, but keep the color for the connection
     setIsDrawingPortal(false);
     setPortalStartPoint(null);
     setPortalPreview(null);
@@ -1753,8 +1769,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     setFloorPlan(updatedFloorPlan);
     addToHistory(updatedFloorPlan);
     
-    // Clear the pending connection
+    // Clear the pending connection and color
     setPendingPortalConnection(null);
+    setPendingPortalColor(null);
     setIsPortalPlacementActive(false);
   };
 
@@ -1886,9 +1903,8 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             portalPreview.endX,
             portalPreview.endY
           ]}
-          stroke="#4CAF50"
-          strokeWidth={3}
-          dash={[5, 3]}
+          stroke={pendingPortalColor || "#4CAF50"}
+          strokeWidth={2}
         />
       </Group>
     );
@@ -2262,7 +2278,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         {selectedId && (
           <button 
             onClick={togglePortalPlacement}
-            className={isPortalPlacementActive ? 'active' : ''}
+            className={`portal-button ${isPortalPlacementActive ? 'active' : ''}`}
           >
             {isPortalPlacementActive ? "Cancel Portal" : "Add Portal"}
           </button>

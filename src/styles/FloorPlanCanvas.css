@@ -53,6 +53,24 @@ body.using-floor-plan {
   transition: all 0.2s ease;
 }
 
+/* Custom style for the Add Portal button */
+.floor-plan-controls button.portal-button {
+  background-color: #7e57c2;
+  color: white;
+  border-color: #5e35b1;
+}
+
+.floor-plan-controls button.portal-button:hover {
+  background-color: #9575cd;
+  border-color: #7e57c2;
+}
+
+.floor-plan-controls button.portal-button.active {
+  background-color: #ede7f6;
+  border-color: #7e57c2;
+  color: #7e57c2;
+}
+
 .floor-plan-controls button:hover {
   background-color: #f0f0f0;
   border-color: #ccc;

@@ -1,6 +1,49 @@
 import { Room, Portal, Vertex, Wall, FloorPlan } from '../types/Room';
 import { v4 as uuidv4 } from 'uuid';
 
+// Keep a cache of portal colors to ensure matching pairs have the same color
+const portalColorCache: Record<string, string> = {};
+
+/**
+ * Generates a bright color for a portal based on its ID or its connection
+ * The same color will be returned for a given portal ID or its connected portal ID
+ */
+export function getPortalColor(portal: Portal): string {
+  // Use the portal ID as the key
+  let portalId = portal.id;
+  
+  // If this portal has a connection, use the smaller of the two IDs
+  // as the key to ensure both portals get the same color
+  if (portal.connectedPortalId) {
+    portalId = portal.id < portal.connectedPortalId ? portal.id : portal.connectedPortalId;
+  }
+  
+  // If we've already generated a color for this connection, use it
+  if (portalColorCache[portalId]) {
+    return portalColorCache[portalId];
+  }
+  
+  // Generate a deterministic color based on the ID string
+  // This ensures the same ID always gets the same color
+  let hash = 0;
+  for (let i = 0; i < portalId.length; i++) {
+    hash = portalId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Convert hash to HSL color
+  // Use a high saturation and moderate lightness for bright, distinct colors
+  const hue = Math.abs(hash % 360);
+  const saturation = 80; // High saturation for vibrant colors
+  const lightness = 55; // Medium lightness for visibility
+  
+  const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  
+  // Cache the color for this connection
+  portalColorCache[portalId] = color;
+  
+  return color;
+}
+
 // Define the legacy portal type for migration purposes
 interface LegacyPortal {
   id?: string;
