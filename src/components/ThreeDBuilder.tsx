@@ -18,6 +18,13 @@ interface ThreeDBuilderProps {
   onClose: () => void;
 }
 
+interface FloorplanCenter {
+  x: number;
+  y: number;
+  z: number;
+  size: number;
+}
+
 const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClose }) => {
   // Calculate default wall height (75% of the smallest room dimension)
   const defaultWallHeight = useMemo(() => {
@@ -70,10 +77,62 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
     return Math.max(50, Math.min(200, thickness));
   }, [floorPlan]);
   
+  // Calculate center point of all rooms
+  const floorplanCenter = useMemo<FloorplanCenter>(() => {
+    if (floorPlan.rooms.length === 0) {
+      return { x: 0, y: 0, z: 0, size: 5000 };
+    }
+    
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    
+    floorPlan.rooms.forEach(room => {
+      // Calculate room boundaries
+      const roomMinX = room.x;
+      const roomMaxX = room.x + room.width;
+      const roomMinY = room.y;
+      const roomMaxY = room.y + room.height;
+      
+      // Update overall boundaries
+      minX = Math.min(minX, roomMinX);
+      maxX = Math.max(maxX, roomMaxX);
+      minY = Math.min(minY, roomMinY);
+      maxY = Math.max(maxY, roomMaxY);
+    });
+    
+    // Calculate center point
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    // Calculate model size for camera positioning
+    const modelWidth = maxX - minX;
+    const modelHeight = maxY - minY;
+    const modelSize = Math.max(modelWidth, modelHeight, 1000); // Minimum size to prevent issues with empty scenes
+    
+    return { 
+      x: centerX, 
+      y: 0, 
+      z: centerY,
+      size: modelSize 
+    };
+  }, [floorPlan]);
+  
   const [wallHeight, setWallHeight] = useState<number>(defaultWallHeight);
   const [wallThickness, setWallThickness] = useState<number>(defaultWallThickness);
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
   const [wireframe, setWireframe] = useState<boolean>(false);
+  
+  // Calculate camera position based on model size
+  const cameraPosition = useMemo<[number, number, number]>(() => {
+    const distance = floorplanCenter.size * 1.5; // Position camera 1.5x the model size away
+    return [
+      floorplanCenter.x + distance,
+      distance,
+      floorplanCenter.z + distance
+    ];
+  }, [floorplanCenter]);
   
   // Update wall height and thickness when defaults change
   useEffect(() => {
@@ -85,8 +144,10 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
   useEffect(() => {
     if (isOpen) {
       console.log('Floorplan data:', floorPlan);
+      console.log('Floorplan center:', floorplanCenter);
+      console.log('Camera position:', cameraPosition);
     }
-  }, [floorPlan, isOpen]);
+  }, [floorPlan, isOpen, floorplanCenter, cameraPosition]);
   
   if (!isOpen) return null;
   
@@ -183,19 +244,23 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
         </div>
         
         <div className="three-d-builder-canvas">
-          <Canvas camera={{ position: [5000, 5000, 5000], far: 50000, near: 1 }}>
-            <color attach="background" args={['#f0f0f0']} />
+          <Canvas camera={{ position: cameraPosition, far: 100000, near: 1 }}>
+            <color attach="background" args={['#000000']} />
             <ambientLight intensity={0.7} />
-            <directionalLight position={[10000, 10000, 5000]} intensity={1} />
-            <CameraControls autoRotate={autoRotate} />
+            <directionalLight position={[10000, 10000, 10000]} intensity={1.5} />
+            <CameraControls 
+              autoRotate={autoRotate} 
+              center={[floorplanCenter.x, floorplanCenter.y, floorplanCenter.z]} 
+            />
             <Grid 
-              args={[10000, 10000]} 
+              args={[floorplanCenter.size * 2, floorplanCenter.size * 2]} 
               cellSize={1000}
               cellThickness={1}
               cellColor="#6f6f6f"
               sectionColor="#9d4b4b"
+              position={[floorplanCenter.x, 0, floorplanCenter.z]}
             />
-            <axesHelper args={[5000]} />
+            <axesHelper args={[5000]} position={[floorplanCenter.x, 0, floorplanCenter.z]} />
             <FloorPlanModel 
               floorPlan={floorPlan} 
               wallHeight={wallHeight} 
@@ -210,14 +275,24 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
 };
 
 // Component to handle camera positioning
-const CameraControls: React.FC<{ autoRotate: boolean }> = ({ autoRotate }) => {
+const CameraControls: React.FC<{ 
+  autoRotate: boolean;
+  center: [number, number, number];
+}> = ({ autoRotate, center }) => {
   const { camera } = useThree();
   const controlsRef = useRef<any>(null);
   
+  // Update camera target to look at the center of the model
   useEffect(() => {
-    camera.lookAt(0, 0, 0);
-  }, [camera]);
+    camera.lookAt(center[0], center[1], center[2]);
+    
+    if (controlsRef.current) {
+      controlsRef.current.target.set(center[0], center[1], center[2]);
+      controlsRef.current.update();
+    }
+  }, [camera, center]);
   
+  // Update auto-rotate setting
   useEffect(() => {
     if (controlsRef.current) {
       controlsRef.current.autoRotate = autoRotate;
@@ -230,6 +305,7 @@ const CameraControls: React.FC<{ autoRotate: boolean }> = ({ autoRotate }) => {
       makeDefault
       autoRotate={autoRotate}
       autoRotateSpeed={0.5}
+      target={new THREE.Vector3(center[0], center[1], center[2])}
     />
   );
 };
