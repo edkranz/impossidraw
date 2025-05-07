@@ -13,6 +13,7 @@ interface FloorPlanToolbarProps {
   triggerFileInput?: boolean;
   toggleInspector: () => void;
   isInspectorVisible: boolean;
+  onOpenBuilder: () => void;
 }
 
 const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
@@ -26,7 +27,8 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
   importFloorPlan,
   triggerFileInput,
   toggleInspector,
-  isInspectorVisible
+  isInspectorVisible,
+  onOpenBuilder
 }) => {
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [gridSizeWidth, setGridSizeWidth] = useState(100); // Default 100mm (10cm) grid width
@@ -142,6 +144,19 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
           disabled={!canRedo}
         >
           ↪
+        </button>
+      </div>
+      
+      <div className="toolbar-divider"></div>
+      
+      <div className="toolbar-section">
+        <button 
+          onClick={onOpenBuilder}
+          className="toolbar-button" 
+          title="Open 3D Builder"
+          disabled={floorPlan.rooms.length === 0}
+        >
+          Build 3D
         </button>
       </div>
       

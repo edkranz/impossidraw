@@ -1,0 +1,98 @@
+{
+  "gridSizeWidth": 100,
+  "gridSizeHeight": 100,
+  "rooms": [
+    {
+      "id": "room-c80b6a0e-d8c5-49cf-a7bb-5c1abcc1a937",
+      "x": -100,
+      "y": -100,
+      "width": 100,
+      "height": 100,
+      "name": "Room 1",
+      "color": "rgba(175, 127, 109, 0.2)",
+      "portals": [],
+      "portalIds": [],
+      "walls": [
+        {
+          "id": "wall-57019d5d-a5ef-4c4e-a3df-217ee710cbea",
+          "vertexIds": [
+            "vertex-ee0441cc-b50b-4086-8aac-c63c28fecf5d",
+            "vertex-187526dc-7c6d-49f2-9714-abea3f9065b2"
+          ]
+        },
+        {
+          "id": "wall-07f13198-5998-49ac-a292-14bfb5d220a2",
+          "vertexIds": [
+            "vertex-187526dc-7c6d-49f2-9714-abea3f9065b2",
+            "vertex-b35c9632-2f5f-45aa-a8d9-e8ba4a0e8cb2"
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "vertex-ee0441cc-b50b-4086-8aac-c63c28fecf5d",
+          "x": 52.51989037518161,
+          "y": 0.04820731756755947
+        },
+        {
+          "id": "vertex-187526dc-7c6d-49f2-9714-abea3f9065b2",
+          "x": 52.51989037518161,
+          "y": 52.19723682127277
+        },
+        {
+          "id": "vertex-b35c9632-2f5f-45aa-a8d9-e8ba4a0e8cb2",
+          "x": 100,
+          "y": 51.97437772082958
+        }
+      ],
+      "gridX": -1,
+      "gridY": -1
+    },
+    {
+      "id": "room-6a1c8d62-872b-4383-8da2-3882fa075ae7",
+      "x": 0,
+      "y": -100,
+      "width": 100,
+      "height": 100,
+      "name": "Room 2",
+      "color": "rgba(175, 57, 250, 0.2)",
+      "portals": [],
+      "portalIds": [],
+      "walls": [
+        {
+          "id": "wall-f1c099e1-52ab-4872-9c52-517850419fab",
+          "vertexIds": [
+            "vertex-f13f309a-08f9-4952-8de6-96d30a78f80b",
+            "vertex-a88965bc-ba16-4776-ab0f-80ea1f272cdd"
+          ]
+        },
+        {
+          "id": "wall-8e488649-1f4c-46b9-aa3c-fe68d927df7a",
+          "vertexIds": [
+            "vertex-f13f309a-08f9-4952-8de6-96d30a78f80b",
+            "vertex-16bfef86-9647-440f-9381-33e44aaaefba"
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "vertex-f13f309a-08f9-4952-8de6-96d30a78f80b",
+          "x": 43.892121556887304,
+          "y": 40.162845397340796
+        },
+        {
+          "id": "vertex-a88965bc-ba16-4776-ab0f-80ea1f272cdd",
+          "x": 0,
+          "y": 40.162845397340796
+        },
+        {
+          "id": "vertex-16bfef86-9647-440f-9381-33e44aaaefba",
+          "x": 44.79467918908011,
+          "y": 100
+        }
+      ],
+      "gridX": 0,
+      "gridY": -1
+    }
+  ]
+}
