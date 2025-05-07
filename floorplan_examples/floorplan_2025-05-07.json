@@ -1,0 +1,36 @@
+{
+  "gridSizeWidth": 100,
+  "gridSizeHeight": 100,
+  "rooms": [
+    {
+      "id": "room-c80b6a0e-d8c5-49cf-a7bb-5c1abcc1a937",
+      "x": -100,
+      "y": -100,
+      "width": 100,
+      "height": 100,
+      "name": "Room 1",
+      "color": "rgba(175, 127, 109, 0.2)",
+      "portals": [],
+      "portalIds": [],
+      "walls": [],
+      "vertices": [],
+      "gridX": -1,
+      "gridY": -1
+    },
+    {
+      "id": "room-6a1c8d62-872b-4383-8da2-3882fa075ae7",
+      "x": 0,
+      "y": -100,
+      "width": 100,
+      "height": 100,
+      "name": "Room 2",
+      "color": "rgba(175, 57, 250, 0.2)",
+      "portals": [],
+      "portalIds": [],
+      "walls": [],
+      "vertices": [],
+      "gridX": 0,
+      "gridY": -1
+    }
+  ]
+}

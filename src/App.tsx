@@ -4,7 +4,9 @@ import FloorPlanCanvas from './components/FloorPlanCanvas';
 import FloorPlanToolbar from './components/FloorPlanToolbar';
 import Navbar from './components/Navbar';
 import RoomInspector from './components/RoomInspector';
+import ThreeDBuilder from './components/ThreeDBuilder';
 import { FloorPlan, Room } from './types/Room';
+import './styles/ThreeDBuilder.css';
 
 function App() {
   // Canvas viewport dimensions - just for the visible area
@@ -27,6 +29,9 @@ function App() {
 
   // Wall placement state
   const [isWallPlacementActive, setIsWallPlacementActive] = useState(false);
+
+  // 3D Builder visibility
+  const [showThreeDBuilder, setShowThreeDBuilder] = useState(false);
 
   // Handle window resize
   useEffect(() => {
@@ -57,6 +62,16 @@ function App() {
     setIsInspectorVisible(prev => !prev);
   };
 
+  // Open 3D Builder
+  const openThreeDBuilder = () => {
+    setShowThreeDBuilder(true);
+  };
+
+  // Close 3D Builder
+  const closeThreeDBuilder = () => {
+    setShowThreeDBuilder(false);
+  };
+  
   // Initialize with a default floor plan
   // Grid cell size determines the maximum room size
   const [floorPlan, setFloorPlan] = useState<FloorPlan>({
@@ -251,6 +266,7 @@ function App() {
             triggerFileInput={triggerFileInput}
             toggleInspector={toggleInspector}
             isInspectorVisible={isInspectorVisible}
+            onOpenBuilder={openThreeDBuilder}
           />
           <FloorPlanCanvas 
             width={canvasSize.width} 
@@ -273,6 +289,13 @@ function App() {
           />
         )}
       </div>
+
+      {/* 3D Builder Modal */}
+      <ThreeDBuilder 
+        floorPlan={floorPlan}
+        isOpen={showThreeDBuilder}
+        onClose={closeThreeDBuilder}
+      />
 
       {/* Welcome Modal */}
       {showWelcomeModal && (
