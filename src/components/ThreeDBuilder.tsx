@@ -324,9 +324,16 @@ const FloorPlanModel: React.FC<{
     const handleExport = () => {
       if (!sceneRef.current) return;
       
+      // Create a scaled copy of the scene to convert mm to m for export
+      const scaleFactor = 0.001; // Convert mm to m (1/1000)
+      const exportGroup = new THREE.Group();
+      const sceneClone = sceneRef.current.clone();
+      sceneClone.scale.set(scaleFactor, scaleFactor, scaleFactor);
+      exportGroup.add(sceneClone);
+      
       const exporter = new GLTFExporter();
       exporter.parse(
-        sceneRef.current,
+        exportGroup,
         (gltf) => {
           const blob = new Blob([gltf as BlobPart], { type: 'application/octet-stream' });
           const link = document.createElement('a');
