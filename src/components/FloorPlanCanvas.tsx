@@ -32,7 +32,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   setIsWallPlacementActive
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(0.25);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const stageRef = useRef<Konva.Stage>(null);
   const [isDraggingRoom, setIsDraggingRoom] = useState(false);

@@ -31,8 +31,8 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
   onOpenBuilder
 }) => {
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
-  const [gridSizeWidth, setGridSizeWidth] = useState(100); // Default 100mm (10cm) grid width
-  const [gridSizeHeight, setGridSizeHeight] = useState(100); // Default 100mm (10cm) grid height
+  const [gridSizeWidth, setGridSizeWidth] = useState(1000); 
+  const [gridSizeHeight, setGridSizeHeight] = useState(1000);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Effect to handle file input trigger from Navbar
@@ -176,28 +176,16 @@ const FloorPlanToolbar: React.FC<FloorPlanToolbarProps> = ({
             <div className="form-group">
               <label>Maximum Room Width (X) (mm):</label>
               <input 
-                type="number" 
                 value={gridSizeWidth} 
                 onChange={(e) => setGridSizeWidth(Number(e.target.value))} 
-                min="10" 
-                max="1000"
-                step="10"
-                title="Sets the width of each grid cell. Rooms can only be 1 cell wide. Range: 10mm to 1000mm"
               />
             </div>
             <div className="form-group">
               <label>Maximum Room Length (Y) (mm):</label>
               <input 
-                type="number" 
                 value={gridSizeHeight} 
                 onChange={(e) => setGridSizeHeight(Number(e.target.value))} 
-                min="10" 
-                max="1000"
-                step="10"
-                title="Sets the height of each grid cell. Rooms can only be 1 cell tall. Range: 10mm to 1000mm"
-              />
-              <small className="form-help">Common values: 100mm (10cm), 250mm (25cm), 500mm (50cm), 1000mm (1m)</small>
-              <small className="form-help">Room sizes are limited to one grid cell each</small>
+            />
             </div>
             <div className="form-actions">
               <button onClick={handleNewProject}>Create</button>

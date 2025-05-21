@@ -28,28 +28,13 @@ interface FloorplanCenter {
 const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClose }) => {
   // Calculate default wall height (75% of the smallest room dimension)
   const defaultWallHeight = useMemo(() => {
-    if (floorPlan.rooms.length === 0) {
-      return 2000; // Default if no rooms
-    }
-    
-    // Find the smallest dimension of all rooms
-    let smallestDimension = Number.MAX_VALUE;
-    
-    floorPlan.rooms.forEach(room => {
-      const minDimension = Math.min(room.width, room.height);
-      if (minDimension < smallestDimension) {
-        smallestDimension = minDimension;
-      }
-    });
-    
-    // Return 75% of the smallest dimension, with a reasonable minimum
-    return Math.max(1000, smallestDimension * 0.75);
+    return 2000;
   }, [floorPlan]);
   
   // Calculate default wall thickness
   const defaultWallThickness = useMemo(() => {
     if (floorPlan.rooms.length === 0) {
-      return 100; // Default thickness
+      return 20; // Default thickness
     }
     
     // Calculate average room dimensions
@@ -197,9 +182,6 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
               <input 
                 type="range" 
                 id="wall-thickness-slider"
-                min="20" 
-                max="300"
-                step="5"
                 value={wallThickness} 
                 onChange={(e) => setWallThickness(Number(e.target.value))}
                 className="slider-input"
