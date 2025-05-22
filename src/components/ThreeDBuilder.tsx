@@ -3,6 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter';
+import { OBJExporter } from 'three/examples/jsm/exporters/OBJExporter';
 import { FloorPlan } from '../types/Room';
 
 // Type for wall segment in 3D representation
@@ -136,9 +137,9 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
   
   if (!isOpen) return null;
   
-  const handleExport = () => {
+  const handleExport = (format: 'glb' | 'obj') => {
     // The export function is called from inside the 3D scene
-    const event = new CustomEvent('export-model');
+    const event = new CustomEvent('export-model', { detail: { format } });
     window.dispatchEvent(event);
   };
   
@@ -182,6 +183,9 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
               <input 
                 type="range" 
                 id="wall-thickness-slider"
+                min="20" 
+                max="300"
+                step="5"
                 value={wallThickness} 
                 onChange={(e) => setWallThickness(Number(e.target.value))}
                 className="slider-input"
@@ -220,9 +224,14 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
             </div>
           </div>
           
-          <button className="export-button" onClick={handleExport}>
-            Export GLB
-          </button>
+          <div className="export-buttons">
+            <button className="export-button" onClick={() => handleExport('glb')}>
+              Export GLB
+            </button>
+            <button className="export-button" onClick={() => handleExport('obj')}>
+              Export OBJ
+            </button>
+          </div>
         </div>
         
         <div className="three-d-builder-canvas">
@@ -303,8 +312,12 @@ const FloorPlanModel: React.FC<{
   
   // Handle model export
   React.useEffect(() => {
-    const handleExport = () => {
+    const handleExport = (event: Event) => {
       if (!sceneRef.current) return;
+      
+      // Get export format from event detail
+      const customEvent = event as CustomEvent;
+      const format = customEvent.detail?.format || 'glb';
       
       // Create a scaled copy of the scene to convert mm to m for export
       const scaleFactor = 0.001; // Convert mm to m (1/1000)
@@ -313,21 +326,33 @@ const FloorPlanModel: React.FC<{
       sceneClone.scale.set(scaleFactor, scaleFactor, scaleFactor);
       exportGroup.add(sceneClone);
       
-      const exporter = new GLTFExporter();
-      exporter.parse(
-        exportGroup,
-        (gltf) => {
-          const blob = new Blob([gltf as BlobPart], { type: 'application/octet-stream' });
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          link.download = `floorplan_3d_${new Date().toISOString().slice(0, 10)}.glb`;
-          link.click();
-        },
-        (error) => {
-          console.error('An error happened during export:', error);
-        },
-        { binary: true } // Export as binary GLB
-      );
+      if (format === 'glb') {
+        // Export as GLB
+        const exporter = new GLTFExporter();
+        exporter.parse(
+          exportGroup,
+          (gltf) => {
+            const blob = new Blob([gltf as BlobPart], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `floorplan_3d_${new Date().toISOString().slice(0, 10)}.glb`;
+            link.click();
+          },
+          (error) => {
+            console.error('An error happened during export:', error);
+          },
+          { binary: true } // Export as binary GLB
+        );
+      } else if (format === 'obj') {
+        // Export as OBJ
+        const exporter = new OBJExporter();
+        const result = exporter.parse(exportGroup);
+        const blob = new Blob([result], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `floorplan_3d_${new Date().toISOString().slice(0, 10)}.obj`;
+        link.click();
+      }
     };
     
     window.addEventListener('export-model', handleExport);
