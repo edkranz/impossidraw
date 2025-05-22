@@ -23,6 +23,7 @@ interface RoomProps {
   selectedWallId?: string | null;
   selectedVertexId?: string | null;
   isPortalPlacementActive?: boolean;
+  scale?: number; // Add scale prop to receive zoom level
 }
 
 const Room: React.FC<RoomProps> = ({
@@ -42,7 +43,8 @@ const Room: React.FC<RoomProps> = ({
   onWallDelete,
   selectedWallId,
   selectedVertexId,
-  isPortalPlacementActive = false
+  isPortalPlacementActive = false,
+  scale = 1 // Default scale if not provided
 }) => {
   const shapeRef = React.useRef<Konva.Rect>(null);
   const trRef = React.useRef<Konva.Transformer>(null);
@@ -60,6 +62,29 @@ const Room: React.FC<RoomProps> = ({
     points: number[];
   }[]>([]);
   const [isDraggingVertex, setIsDraggingVertex] = useState(false);
+
+  // Calculate scaled sizes for visual elements based on zoom level
+  const getScaledSize = (baseSize: number): number => {
+    // Scale inversely with zoom level with a reasonable minimum
+    return Math.max(baseSize / scale, baseSize * 0.25);
+  };
+
+  // Wall thickness that scales with zoom
+  const getWallThickness = (isSelected: boolean, isHovered: boolean): number => {
+    const baseThickness = isSelected ? 6 : (isHovered ? 5 : 4);
+    return getScaledSize(baseThickness);
+  };
+
+  // Vertex radius that scales with zoom
+  const getVertexRadius = (isSelected: boolean, isHovered: boolean): number => {
+    const baseRadius = isSelected ? 10 : (isHovered ? 8 : 6);
+    return getScaledSize(baseRadius);
+  };
+
+  // Hit areas that scale with zoom for easier interaction
+  const getHitArea = (baseSize: number): number => {
+    return getScaledSize(baseSize * 2); // Make hit areas even larger than visible elements
+  };
 
   // Snap to grid (in mm)
   const snapToGridX = (value: number): number => {
@@ -152,7 +177,7 @@ const Room: React.FC<RoomProps> = ({
               <Line
                 points={points}
                 stroke={isWallSelected ? "#1890ff" : (isWallHovered ? "#69c0ff" : "black")}
-                strokeWidth={isWallSelected ? 3 : (isWallHovered ? 2.5 : 2)}
+                strokeWidth={getWallThickness(isWallSelected, isWallHovered)}
                 lineCap="round"
                 lineJoin="round"
                 onClick={() => onWallSelect && onWallSelect(id, wall.id)}
@@ -163,7 +188,7 @@ const Room: React.FC<RoomProps> = ({
                     onWallDelete && onWallDelete(id, wall.id);
                   }
                 }}
-                hitStrokeWidth={10} // Wider hit area for easier selection
+                hitStrokeWidth={getHitArea(10)} // Wider hit area for easier selection
                 onMouseEnter={() => {
                   document.body.style.cursor = 'pointer';
                   setHoveredWallId(wall.id);
@@ -204,12 +229,12 @@ const Room: React.FC<RoomProps> = ({
               <Line
                 points={points}
                 stroke={portalColor}
-                strokeWidth={isPortalSelected ? 3 : (isPortalHovered ? 2.5 : 2)}
+                strokeWidth={getWallThickness(isPortalSelected, isPortalHovered)}
                 lineCap="round"
                 lineJoin="round"
                 onClick={() => onWallSelect && onWallSelect(id, portal.id)}
                 onTap={() => onWallSelect && onWallSelect(id, portal.id)}
-                hitStrokeWidth={12} // Wider hit area for easier selection
+                hitStrokeWidth={getHitArea(12)} // Wider hit area for easier selection
                 onMouseEnter={() => {
                   document.body.style.cursor = 'pointer';
                   setHoveredWallId(portal.id);
@@ -247,15 +272,15 @@ const Room: React.FC<RoomProps> = ({
           key={vertex.id}
           x={vertex.x}
           y={vertex.y}
-          radius={isVertexSelected ? 6 : (isVertexHovered ? 4 : 3)}
+          radius={getVertexRadius(isVertexSelected, isVertexHovered)}
           fill={isVertexSelected ? "#1890ff" : (isVertexHovered ? "#69c0ff" : (isWallSelected ? "#d9f0ff" : "#f0f0f0"))}
           stroke={isVertexSelected ? "#0050b3" : (isVertexHovered ? "#1890ff" : (isWallSelected ? "#69c0ff" : "#d9d9d9"))}
-          strokeWidth={isVertexSelected || isVertexHovered ? 2 : 1}
+          strokeWidth={isVertexSelected || isVertexHovered ? getScaledSize(2) : getScaledSize(1)}
           opacity={isVertexSelected || isVertexHovered ? 1 : 0.8}
           // Add a larger hitbox area
-          hitStrokeWidth={6}
+          hitStrokeWidth={getScaledSize(6)}
           // Set invisible hit area that's larger than the visible vertex
-          hitRadius={8}
+          hitRadius={getHitArea(8)}
           draggable={!disableDragging}
           onClick={(e) => {
             e.cancelBubble = true; // Prevent event from bubbling to the room
@@ -519,7 +544,7 @@ const Room: React.FC<RoomProps> = ({
             key={`preview-${line.vertexId}-${index}`}
             points={line.points}
             stroke="#1890ff"
-            strokeWidth={2}
+            strokeWidth={getScaledSize(4)}
             dash={[5, 5]}
             opacity={0.6}
             lineCap="round"

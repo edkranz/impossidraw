@@ -1892,6 +1892,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const room = floorPlan.rooms.find(r => r.id === portalStartPoint.roomId);
     if (!room) return null;
     
+    // Scale preview line thickness inversely proportional to zoom
+    const scaledThickness = Math.max(8/scale, 0.5);
+    
     return (
       <Group>
         <Line
@@ -1904,7 +1907,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             portalPreview.endY
           ]}
           stroke={pendingPortalColor || "#4CAF50"}
-          strokeWidth={2}
+          strokeWidth={scaledThickness}
         />
       </Group>
     );
@@ -1928,6 +1931,11 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const hLineCount = Math.min(Math.ceil((bottomEdge - topEdge) / gridSizeHeight), gridLineLimit);
     const vLineCount = Math.min(Math.ceil((rightEdge - leftEdge) / gridSizeWidth), gridLineLimit);
     
+    // Calculate grid line thickness that ensures consistent visual thickness
+    // Base thickness when scale is 1.0, then adjust inversely proportional to zoom
+    const baseThickness = 1;
+    const gridLineThickness = Math.max(baseThickness / safeScale, 0.1);
+    
     if (hLineCount > 0 && vLineCount > 0 && isFinite(hLineCount) && isFinite(vLineCount)) {
       // Vertical lines
       for (let x = leftEdge; x <= rightEdge; x += gridSizeWidth) {
@@ -1937,7 +1945,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             key={`v-${x}`}
             points={[x, topEdge, x, bottomEdge]}
             stroke="#ddd"
-            strokeWidth={1 / safeScale}
+            strokeWidth={gridLineThickness}
           />
         );
       }
@@ -1950,7 +1958,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             key={`h-${y}`}
             points={[leftEdge, y, rightEdge, y]}
             stroke="#ddd"
-            strokeWidth={1 / safeScale}
+            strokeWidth={gridLineThickness}
           />
         );
       }
@@ -2217,6 +2225,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     const room = floorPlan.rooms.find(r => r.id === wallStartPoint.roomId);
     if (!room) return null;
     
+    // Scale preview line thickness inversely proportional to zoom
+    const scaledThickness = Math.max(8/scale, 0.5);
+    
     return (
       <Group>
         <Line
@@ -2229,7 +2240,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
             wallPreview.endY
           ]}
           stroke="blue"
-          strokeWidth={2}
+          strokeWidth={scaledThickness}
           dash={[5, 5]}
         />
       </Group>
@@ -2364,6 +2375,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               selectedWallId={selectedWallId}
               selectedVertexId={selectedVertexId}
               isPortalPlacementActive={isPortalPlacementActive}
+              scale={scale} // Pass the current zoom level
             />
           ))}
           
