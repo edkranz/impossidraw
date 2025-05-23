@@ -324,6 +324,7 @@ const FloorPlanModel: React.FC<{
       const exportGroup = new THREE.Group();
       const sceneClone = sceneRef.current.clone();
       sceneClone.scale.set(scaleFactor, scaleFactor, scaleFactor);
+      sceneClone.updateMatrixWorld( true )
       exportGroup.add(sceneClone);
       
       if (format === 'glb') {
