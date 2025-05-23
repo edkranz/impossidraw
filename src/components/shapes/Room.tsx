@@ -507,32 +507,32 @@ const Room: React.FC<RoomProps> = ({
         }}
       />
       
-      {/* Room name */}
+      {/* Room name
       <Text
         text={name}
         x={x + width * 0.02}
         y={y + height * 0.02}
         fontSize={Math.min(width, height) * 0.1}
         fill="black"
-      />
+      /> */}
       
-      {/* Room dimensions */}
+      {/* Room dimensions
       <Text
         text={getDisplayDimensions()}
         x={x + width * 0.02}
         y={y + height * 0.02 + Math.min(width, height) * 0.1 + 5}
         fontSize={Math.min(width, height) * 0.05}
         fill="#555"
-      />
+      /> */}
       
-      {/* Grid position */}
+      {/* Grid position
       <Text
         text={getGridPosition()}
         x={x + width * 0.02}
         y={y + height * 0.02 + Math.min(width, height) * 0.15 + 10}
         fontSize={Math.min(width, height) * 0.05}
         fill="#777"
-      />
+      /> */}
       
       {/* Render walls */}
       <Group x={x} y={y}>
