@@ -68,6 +68,9 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   // Add state for storing the temporary portal color
   const [pendingPortalColor, setPendingPortalColor] = useState<string | null>(null);
 
+  // Add this near the top of the file, after other imports
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
+
   // Calculate min and max zoom limits based on grid size
   const getZoomLimits = () => {
     // Minimum scale ensures grid cells don't become too small (prevents crashes when zoomed out too far)
@@ -116,6 +119,29 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     
     return () => {
       container.removeEventListener('wheel', preventDefaultWheel);
+    };
+  }, []);
+
+  // Add this effect after other useEffect hooks
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
@@ -1036,7 +1062,36 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     // Get the vertex being dragged
     const draggedVertex = room.vertices.find(v => v.id === vertexId);
     if (!draggedVertex) return;
-    
+
+    // If shift is pressed, snap to 90-degree angles relative to connected vertices
+    if (isShiftPressed) {
+      // Find all walls that use this vertex
+      const connectedWalls = room.walls.filter(wall => wall.vertexIds.includes(vertexId));
+      
+      // For each connected wall, find the other vertex
+      for (const wall of connectedWalls) {
+        const otherVertexId = wall.vertexIds.find(vid => vid !== vertexId);
+        if (!otherVertexId) continue;
+        
+        const otherVertex = room.vertices.find(v => v.id === otherVertexId);
+        if (!otherVertex) continue;
+        
+        // Calculate the difference from the original position
+        const dx = newX - otherVertex.x;
+        const dy = newY - otherVertex.y;
+        
+        // If the line is more horizontal than vertical
+        if (Math.abs(dx) > Math.abs(dy)) {
+          newY = otherVertex.y; // Keep Y coordinate the same
+        } else {
+          newX = otherVertex.x; // Keep X coordinate the same
+        }
+        
+        // We only need to snap to one connected vertex
+        break;
+      }
+    }
+
     // Check if this vertex is part of a portal that has a connection
     let connectedPortalInfo: {
       sourceRoomId: string;
@@ -1511,6 +1566,20 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         snapToX = vertex.x;
         snapToY = vertex.y;
         snappedToVertex = true;
+        break;
+      }
+    }
+
+    // If shift is held and not snapped to a vertex, snap to 90-degree angles
+    if (!snappedToVertex && isShiftPressed) {
+      const dx = snapToX - portalStartPoint.x;
+      const dy = snapToY - portalStartPoint.y;
+      
+      // If the line is more horizontal than vertical
+      if (Math.abs(dx) > Math.abs(dy)) {
+        snapToY = portalStartPoint.y; // Keep Y coordinate the same
+      } else {
+        snapToX = portalStartPoint.x; // Keep X coordinate the same
       }
     }
     
@@ -2115,6 +2184,20 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         snapToX = vertex.x;
         snapToY = vertex.y;
         snappedToVertex = true;
+        break;
+      }
+    }
+
+    // If shift is held and not snapped to a vertex, snap to 90-degree angles
+    if (!snappedToVertex && isShiftPressed) {
+      const dx = snapToX - wallStartPoint.x;
+      const dy = snapToY - wallStartPoint.y;
+      
+      // If the line is more horizontal than vertical
+      if (Math.abs(dx) > Math.abs(dy)) {
+        snapToY = wallStartPoint.y; // Keep Y coordinate the same
+      } else {
+        snapToX = wallStartPoint.x; // Keep X coordinate the same
       }
     }
     
@@ -2375,7 +2458,8 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               selectedWallId={selectedWallId}
               selectedVertexId={selectedVertexId}
               isPortalPlacementActive={isPortalPlacementActive}
-              scale={scale} // Pass the current zoom level
+              scale={scale}
+              isShiftPressed={isShiftPressed}
             />
           ))}
           

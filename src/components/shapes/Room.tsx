@@ -24,6 +24,7 @@ interface RoomProps {
   selectedVertexId?: string | null;
   isPortalPlacementActive?: boolean;
   scale?: number; // Add scale prop to receive zoom level
+  isShiftPressed?: boolean;
 }
 
 const Room: React.FC<RoomProps> = ({
@@ -44,7 +45,8 @@ const Room: React.FC<RoomProps> = ({
   selectedWallId,
   selectedVertexId,
   isPortalPlacementActive = false,
-  scale = 1 // Default scale if not provided
+  scale = 1, // Default scale if not provided
+  isShiftPressed = false
 }) => {
   const shapeRef = React.useRef<Konva.Rect>(null);
   const trRef = React.useRef<Konva.Transformer>(null);
@@ -146,6 +148,44 @@ const Room: React.FC<RoomProps> = ({
     
     // Let the object follow the cursor naturally - no snapping during drag
     // The shape's position is already being updated by Konva drag behavior
+  };
+
+  const handleVertexDragMove = (e: Konva.KonvaEventObject<DragEvent>, vertexId: string) => {
+    const vertex = room.vertices.find(v => v.id === vertexId);
+    if (!vertex) return;
+
+    let newX = e.target.x();
+    let newY = e.target.y();
+
+    // If shift is pressed, snap to 90-degree angles relative to connected vertices
+    if (isShiftPressed) {
+      // Find all walls that use this vertex
+      const connectedWalls = room.walls.filter(wall => wall.vertexIds.includes(vertexId));
+      
+      // For each connected wall, find the other vertex
+      for (const wall of connectedWalls) {
+        const otherVertexId = wall.vertexIds.find(vid => vid !== vertexId);
+        if (!otherVertexId) continue;
+        
+        const otherVertex = room.vertices.find(v => v.id === otherVertexId);
+        if (!otherVertex) continue;
+        
+        // Calculate the difference from the original position
+        const dx = newX - otherVertex.x;
+        const dy = newY - otherVertex.y;
+        
+        // If the line is more horizontal than vertical
+        if (Math.abs(dx) > Math.abs(dy)) {
+          newY = otherVertex.y; // Keep Y coordinate the same
+        } else {
+          newX = otherVertex.x; // Keep X coordinate the same
+        }
+        
+        // Update the vertex position for preview
+        e.target.position({ x: newX, y: newY });
+        break;
+      }
+    }
   };
 
   // Function to render all walls and portals
@@ -293,7 +333,7 @@ const Room: React.FC<RoomProps> = ({
           onDragStart={() => {
             setIsDraggingVertex(true);
           }}
-          onDragMove={(e) => {
+          onDragMove={(e: Konva.KonvaEventObject<DragEvent>) => {
             // Confine vertex drag within room bounds
             const newX = Math.max(0, Math.min(width, e.target.x()));
             const newY = Math.max(0, Math.min(height, e.target.y()));
