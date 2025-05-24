@@ -248,7 +248,7 @@ const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         // Using geometric progression for smooth zooming
         // For a small change ds, we want to advance proportionally on a logarithmic scale
         // This ensures that each zoom step "feels" the same regardless of the current zoom level
-        const zoomFactor = Math.exp(validDs * 0.5); // 0.5 is a sensitivity factor
+        const zoomFactor = Math.exp(validDs);
         const newScale = scale * zoomFactor;
         
         // Apply zoom limits
