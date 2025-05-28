@@ -440,21 +440,6 @@ const FloorPlanModel: React.FC<{
             />
           </mesh>
           
-          {/* Room vertices - visual indicators */}
-          {room.vertices.map((vertex) => (
-            <mesh 
-              key={`${room.id}-vertex-${vertex.id}`}
-              position={[room.x + vertex.x, wallHeight + 50, room.y + vertex.y]}
-            >
-              <sphereGeometry args={[30, 8, 6]} />
-              <meshStandardMaterial 
-                color="#ff6b6b" 
-                emissive="#ff2222"
-                emissiveIntensity={0.3}
-              />
-            </mesh>
-          ))}
-          
           {/* Room perimeter walls - always render these */}
           {/* Front wall */}
           <mesh 
@@ -472,16 +457,6 @@ const FloorPlanModel: React.FC<{
             />
           </mesh>
           
-          {/* Front wall edge indicators */}
-          <mesh position={[room.x, wallHeight / 2, room.y]}>
-            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
-            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
-          </mesh>
-          <mesh position={[room.x + room.width, wallHeight / 2, room.y]}>
-            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
-            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
-          </mesh>
-          
           {/* Back wall */}
           <mesh 
             position={[room.x + room.width / 2, wallHeight / 2, room.y + room.height]} 
@@ -496,16 +471,6 @@ const FloorPlanModel: React.FC<{
               roughness={0.7}
               metalness={0.0}
             />
-          </mesh>
-          
-          {/* Back wall edge indicators */}
-          <mesh position={[room.x, wallHeight / 2, room.y + room.height]}>
-            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
-            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
-          </mesh>
-          <mesh position={[room.x + room.width, wallHeight / 2, room.y + room.height]}>
-            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
-            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
           </mesh>
           
           {/* Left wall */}
@@ -569,50 +534,23 @@ const FloorPlanModel: React.FC<{
             const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
             
             return (
-              <group 
+              <mesh 
                 key={`${room.id}-wall-${wallIndex}`} 
                 position={[room.x + mid.x, wallHeight / 2, room.y + mid.z]}
+                rotation={[0, Math.atan2(dir.x, dir.z), 0]}
+                castShadow
+                receiveShadow
               >
-                <mesh 
-                  rotation={[0, Math.atan2(dir.x, dir.z), 0]}
-                  castShadow
-                  receiveShadow
-                >
-                  <boxGeometry args={[wallThickness, wallHeight, length]} />
-                  <meshStandardMaterial 
-                    color={isPortal ? '#ff6b6b' : (wireframe ? "#ffffff" : "#e8e8e8")} 
-                    wireframe={wireframe}
-                    roughness={0.7}
-                    metalness={0.0}
-                    emissive={isPortal ? "#ff2222" : "#000000"}
-                    emissiveIntensity={isPortal ? 0.2 : 0}
-                  />
-                </mesh>
-                
-                {/* Wall endpoint indicators */}
-                <mesh 
-                  position={[0, wallHeight / 2 + 30, -length / 2]}
-                  rotation={[0, Math.atan2(dir.x, dir.z), 0]}
-                >
-                  <boxGeometry args={[15, 15, 15]} />
-                  <meshStandardMaterial 
-                    color="#45b7d1" 
-                    emissive="#2980b9" 
-                    emissiveIntensity={0.3}
-                  />
-                </mesh>
-                <mesh 
-                  position={[0, wallHeight / 2 + 30, length / 2]}
-                  rotation={[0, Math.atan2(dir.x, dir.z), 0]}
-                >
-                  <boxGeometry args={[15, 15, 15]} />
-                  <meshStandardMaterial 
-                    color="#45b7d1" 
-                    emissive="#2980b9" 
-                    emissiveIntensity={0.3}
-                  />
-                </mesh>
-              </group>
+                <boxGeometry args={[wallThickness, wallHeight, length]} />
+                <meshStandardMaterial 
+                  color={isPortal ? '#ff6b6b' : (wireframe ? "#ffffff" : "#e8e8e8")} 
+                  wireframe={wireframe}
+                  roughness={0.7}
+                  metalness={0.0}
+                  emissive={isPortal ? "#ff2222" : "#000000"}
+                  emissiveIntensity={isPortal ? 0.2 : 0}
+                />
+              </mesh>
             );
           })}
         </group>
