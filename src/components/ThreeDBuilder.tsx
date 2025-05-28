@@ -235,10 +235,51 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
         </div>
         
         <div className="three-d-builder-canvas">
-          <Canvas camera={{ position: cameraPosition, far: 100000, near: 1 }}>
-            <color attach="background" args={['#000000']} />
-            <ambientLight intensity={0.7} />
-            <directionalLight position={[10000, 10000, 10000]} intensity={1.5} />
+          <Canvas 
+            camera={{ position: cameraPosition, far: 100000, near: 1 }}
+            shadows
+          >
+            <color attach="background" args={['#1a1a1a']} />
+            
+            {/* Enhanced lighting setup for better visibility */}
+            <ambientLight intensity={0.4} />
+            
+            {/* Main directional light from top-right */}
+            <directionalLight 
+              position={[floorplanCenter.x + floorplanCenter.size, floorplanCenter.size * 1.5, floorplanCenter.z + floorplanCenter.size]} 
+              intensity={1.2}
+              castShadow
+              shadow-mapSize-width={2048}
+              shadow-mapSize-height={2048}
+              shadow-camera-far={floorplanCenter.size * 3}
+              shadow-camera-left={-floorplanCenter.size}
+              shadow-camera-right={floorplanCenter.size}
+              shadow-camera-top={floorplanCenter.size}
+              shadow-camera-bottom={-floorplanCenter.size}
+            />
+            
+            {/* Secondary directional light from opposite side for fill lighting */}
+            <directionalLight 
+              position={[floorplanCenter.x - floorplanCenter.size * 0.5, floorplanCenter.size, floorplanCenter.z - floorplanCenter.size * 0.5]} 
+              intensity={0.6}
+              color="#ffffff"
+            />
+            
+            {/* Additional light from the front to illuminate wall details */}
+            <directionalLight 
+              position={[floorplanCenter.x, floorplanCenter.size * 0.8, floorplanCenter.z + floorplanCenter.size * 1.2]} 
+              intensity={0.8}
+              color="#f0f0f0"
+            />
+            
+            {/* Point light for additional detail illumination */}
+            <pointLight 
+              position={[floorplanCenter.x, floorplanCenter.size * 0.5, floorplanCenter.z]} 
+              intensity={0.5}
+              distance={floorplanCenter.size * 2}
+              decay={2}
+            />
+            
             <CameraControls 
               autoRotate={autoRotate} 
               center={[floorplanCenter.x, floorplanCenter.y, floorplanCenter.z]} 
@@ -257,6 +298,7 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
               wallHeight={wallHeight} 
               wallThickness={wallThickness}
               wireframe={wireframe}
+              floorplanCenter={floorplanCenter}
             />
           </Canvas>
         </div>
@@ -307,7 +349,8 @@ const FloorPlanModel: React.FC<{
   wallHeight: number;
   wallThickness: number;
   wireframe: boolean;
-}> = ({ floorPlan, wallHeight, wallThickness, wireframe }) => {
+  floorplanCenter: FloorplanCenter;
+}> = ({ floorPlan, wallHeight, wallThickness, wireframe, floorplanCenter }) => {
   const sceneRef = useRef<THREE.Group>(null);
   
   // Handle model export
@@ -386,46 +429,115 @@ const FloorPlanModel: React.FC<{
           <mesh 
             position={[room.x + room.width / 2, 0, room.y + room.height / 2]} 
             rotation={[-Math.PI / 2, 0, 0]}
+            receiveShadow
           >
             <planeGeometry args={[room.width, room.height]} />
-            <meshStandardMaterial color="#ffffff" wireframe={wireframe} />
+            <meshStandardMaterial 
+              color={wireframe ? "#ffffff" : "#f5f5f5"} 
+              wireframe={wireframe}
+              roughness={0.8}
+              metalness={0.1}
+            />
           </mesh>
+          
+          {/* Room vertices - visual indicators */}
+          {room.vertices.map((vertex) => (
+            <mesh 
+              key={`${room.id}-vertex-${vertex.id}`}
+              position={[room.x + vertex.x, wallHeight + 50, room.y + vertex.y]}
+            >
+              <sphereGeometry args={[30, 8, 6]} />
+              <meshStandardMaterial 
+                color="#ff6b6b" 
+                emissive="#ff2222"
+                emissiveIntensity={0.3}
+              />
+            </mesh>
+          ))}
           
           {/* Room perimeter walls - always render these */}
           {/* Front wall */}
           <mesh 
             position={[room.x + room.width / 2, wallHeight / 2, room.y]} 
             rotation={[0, 0, 0]}
+            castShadow
+            receiveShadow
           >
             <boxGeometry args={[room.width, wallHeight, wallThickness]} />
-            <meshStandardMaterial color="#ffffff" wireframe={wireframe} />
+            <meshStandardMaterial 
+              color={wireframe ? "#ffffff" : "#e8e8e8"} 
+              wireframe={wireframe}
+              roughness={0.7}
+              metalness={0.0}
+            />
+          </mesh>
+          
+          {/* Front wall edge indicators */}
+          <mesh position={[room.x, wallHeight / 2, room.y]}>
+            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
+            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
+          </mesh>
+          <mesh position={[room.x + room.width, wallHeight / 2, room.y]}>
+            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
+            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
           </mesh>
           
           {/* Back wall */}
           <mesh 
             position={[room.x + room.width / 2, wallHeight / 2, room.y + room.height]} 
             rotation={[0, 0, 0]}
+            castShadow
+            receiveShadow
           >
             <boxGeometry args={[room.width, wallHeight, wallThickness]} />
-            <meshStandardMaterial color="#ffffff" wireframe={wireframe} />
+            <meshStandardMaterial 
+              color={wireframe ? "#ffffff" : "#e8e8e8"} 
+              wireframe={wireframe}
+              roughness={0.7}
+              metalness={0.0}
+            />
+          </mesh>
+          
+          {/* Back wall edge indicators */}
+          <mesh position={[room.x, wallHeight / 2, room.y + room.height]}>
+            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
+            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
+          </mesh>
+          <mesh position={[room.x + room.width, wallHeight / 2, room.y + room.height]}>
+            <boxGeometry args={[20, wallHeight + 20, wallThickness + 20]} />
+            <meshStandardMaterial color="#4ecdc4" emissive="#2aa198" emissiveIntensity={0.2} />
           </mesh>
           
           {/* Left wall */}
           <mesh 
             position={[room.x, wallHeight / 2, room.y + room.height / 2]} 
             rotation={[0, Math.PI / 2, 0]}
+            castShadow
+            receiveShadow
           >
             <boxGeometry args={[room.height, wallHeight, wallThickness]} />
-            <meshStandardMaterial color="#ffffff" wireframe={wireframe} />
+            <meshStandardMaterial 
+              color={wireframe ? "#ffffff" : "#e8e8e8"} 
+              wireframe={wireframe}
+              roughness={0.7}
+              metalness={0.0}
+            />
           </mesh>
           
           {/* Right wall */}
           <mesh 
             position={[room.x + room.width, wallHeight / 2, room.y + room.height / 2]} 
             rotation={[0, Math.PI / 2, 0]}
+            castShadow
+            receiveShadow
           >
             <boxGeometry args={[room.height, wallHeight, wallThickness]} />
-            <meshStandardMaterial color="#ffffff" wireframe={wireframe} />
+            <meshStandardMaterial 
+              color={wireframe ? "#ffffff" : "#e8e8e8"} 
+              wireframe={wireframe}
+              roughness={0.7}
+              metalness={0.0}
+            />
           </mesh>
           
           {/* Internal walls (if any) */}
@@ -461,11 +573,43 @@ const FloorPlanModel: React.FC<{
                 key={`${room.id}-wall-${wallIndex}`} 
                 position={[room.x + mid.x, wallHeight / 2, room.y + mid.z]}
               >
-                <mesh rotation={[0, Math.atan2(dir.x, dir.z), 0]}>
+                <mesh 
+                  rotation={[0, Math.atan2(dir.x, dir.z), 0]}
+                  castShadow
+                  receiveShadow
+                >
                   <boxGeometry args={[wallThickness, wallHeight, length]} />
                   <meshStandardMaterial 
-                    color={isPortal ? '#ff0000' : '#ffffff'} 
+                    color={isPortal ? '#ff6b6b' : (wireframe ? "#ffffff" : "#e8e8e8")} 
                     wireframe={wireframe}
+                    roughness={0.7}
+                    metalness={0.0}
+                    emissive={isPortal ? "#ff2222" : "#000000"}
+                    emissiveIntensity={isPortal ? 0.2 : 0}
+                  />
+                </mesh>
+                
+                {/* Wall endpoint indicators */}
+                <mesh 
+                  position={[0, wallHeight / 2 + 30, -length / 2]}
+                  rotation={[0, Math.atan2(dir.x, dir.z), 0]}
+                >
+                  <boxGeometry args={[15, 15, 15]} />
+                  <meshStandardMaterial 
+                    color="#45b7d1" 
+                    emissive="#2980b9" 
+                    emissiveIntensity={0.3}
+                  />
+                </mesh>
+                <mesh 
+                  position={[0, wallHeight / 2 + 30, length / 2]}
+                  rotation={[0, Math.atan2(dir.x, dir.z), 0]}
+                >
+                  <boxGeometry args={[15, 15, 15]} />
+                  <meshStandardMaterial 
+                    color="#45b7d1" 
+                    emissive="#2980b9" 
+                    emissiveIntensity={0.3}
                   />
                 </mesh>
               </group>
