@@ -4,7 +4,7 @@ import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter';
 import { OBJExporter } from 'three/examples/jsm/exporters/OBJExporter';
-import { FloorPlan } from '../types/Room';
+import { FloorPlan, Portal } from '../types/Room';
 
 // Type for wall segment in 3D representation
 interface Wall3D {
@@ -25,6 +25,96 @@ interface FloorplanCenter {
   z: number;
   size: number;
 }
+
+// Types for portal schema export
+interface PortalCorner {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface PortalSchemaData {
+  portalId: string;
+  roomId: string;
+  roomName: string;
+  connectedRoomId: string | null;
+  connectedPortalId: string | null;
+  corners: PortalCorner[];
+}
+
+// Helper function to collect portal schema data
+const collectPortalSchema = (floorPlan: FloorPlan, wallHeight: number): PortalSchemaData[] => {
+  const portalData: PortalSchemaData[] = [];
+  
+  floorPlan.rooms.forEach((room) => {
+    // Find portals in this room - check for walls with isPortal property
+    const portals = room.walls.filter(wall => 'isPortal' in wall && (wall as Portal).isPortal === true);
+    
+    portals.forEach((wall) => {
+      // Get vertices for this portal
+      const vertexIDs = wall.vertexIds;
+      if (vertexIDs.length !== 2) return;
+      
+      const v1 = room.vertices.find(v => v.id === vertexIDs[0]);
+      const v2 = room.vertices.find(v => v.id === vertexIDs[1]);
+      
+      if (!v1 || !v2) return;
+      
+      // Calculate portal corners in world coordinates
+      const start = new THREE.Vector3(room.x + v1.x, 0, room.y + v1.y);
+      const end = new THREE.Vector3(room.x + v2.x, 0, room.y + v2.y);
+      
+      // Create corner coordinates (4 corners: bottom-start, bottom-end, top-start, top-end)
+      const corners: PortalCorner[] = [
+        { x: start.x, y: 0, z: start.z }, // Bottom start
+        { x: end.x, y: 0, z: end.z },     // Bottom end
+        { x: start.x, y: wallHeight, z: start.z }, // Top start
+        { x: end.x, y: wallHeight, z: end.z },     // Top end
+      ];
+      
+      // Get connection info if it's a portal
+      const portal = wall as Portal; // Type assertion for portal properties
+      
+      portalData.push({
+        portalId: wall.id,
+        roomId: room.id,
+        roomName: room.name,
+        connectedRoomId: portal.connectedRoomId || null,
+        connectedPortalId: portal.connectedPortalId || null,
+        corners: corners
+      });
+    });
+  });
+  
+  return portalData;
+};
+
+// Helper function to format portal schema as text
+const formatPortalSchemaAsText = (portalData: PortalSchemaData[]): string => {
+  let text = `Portal Schema Export\n`;
+  text += `Generated: ${new Date().toISOString()}\n`;
+  text += `Total Portals: ${portalData.length}\n\n`;
+  text += `Coordinates are in millimeters (mm)\n`;
+  text += `Format: X, Y, Z\n\n`;
+  
+  portalData.forEach((portal, index) => {
+    text += `Portal ${index + 1}:\n`;
+    text += `  ID: ${portal.portalId}\n`;
+    text += `  Room: ${portal.roomName} (${portal.roomId})\n`;
+    text += `  Connected to Room: ${portal.connectedRoomId || 'None'}\n`;
+    text += `  Connected to Portal: ${portal.connectedPortalId || 'None'}\n`;
+    text += `  Corners:\n`;
+    portal.corners.forEach((corner, cornerIndex) => {
+      const cornerName = cornerIndex === 0 ? 'Bottom Start' : 
+                        cornerIndex === 1 ? 'Bottom End' : 
+                        cornerIndex === 2 ? 'Top Start' : 'Top End';
+      text += `    ${cornerName}: ${corner.x.toFixed(2)}, ${corner.y.toFixed(2)}, ${corner.z.toFixed(2)}\n`;
+    });
+    text += `\n`;
+  });
+  
+  return text;
+};
 
 const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClose }) => {
   // Calculate default wall height (75% of the smallest room dimension)
@@ -110,6 +200,12 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
   const [wireframe, setWireframe] = useState<boolean>(false);
   
+  // Render control states - all enabled by default
+  const [showWalls, setShowWalls] = useState<boolean>(true);
+  const [showFloors, setShowFloors] = useState<boolean>(true);
+  const [showPortals, setShowPortals] = useState<boolean>(true);
+  const [showPortalMarkers, setShowPortalMarkers] = useState<boolean>(true);
+  
   // Calculate camera position based on model size
   const cameraPosition = useMemo<[number, number, number]>(() => {
     const distance = floorplanCenter.size * 1.5; // Position camera 1.5x the model size away
@@ -141,6 +237,21 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
     // The export function is called from inside the 3D scene
     const event = new CustomEvent('export-model', { detail: { format } });
     window.dispatchEvent(event);
+  };
+
+  const handlePortalSchemaExport = () => {
+    // Collect all portal data with corner coordinates
+    const portalSchema = collectPortalSchema(floorPlan, wallHeight);
+    
+    // Create text content
+    const textContent = formatPortalSchemaAsText(portalSchema);
+    
+    // Create and download file
+    const blob = new Blob([textContent], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `portal_schema_${new Date().toISOString().slice(0, 10)}.txt`;
+    link.click();
   };
   
   return (
@@ -224,12 +335,58 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
             </div>
           </div>
           
+          <div className="three-d-builder-form-group checkbox-group">
+            <label>Render Elements:</label>
+            <div className="checkbox-option">
+              <input 
+                type="checkbox" 
+                id="show-walls"
+                checked={showWalls} 
+                onChange={(e) => setShowWalls(e.target.checked)}
+              />
+              <label htmlFor="show-walls">Walls</label>
+            </div>
+            
+            <div className="checkbox-option">
+              <input 
+                type="checkbox" 
+                id="show-floors"
+                checked={showFloors} 
+                onChange={(e) => setShowFloors(e.target.checked)}
+              />
+              <label htmlFor="show-floors">Floors</label>
+            </div>
+            
+            <div className="checkbox-option">
+              <input 
+                type="checkbox" 
+                id="show-portals"
+                checked={showPortals} 
+                onChange={(e) => setShowPortals(e.target.checked)}
+              />
+              <label htmlFor="show-portals">Portals</label>
+            </div>
+            
+            <div className="checkbox-option">
+              <input 
+                type="checkbox" 
+                id="show-portal-markers"
+                checked={showPortalMarkers} 
+                onChange={(e) => setShowPortalMarkers(e.target.checked)}
+              />
+              <label htmlFor="show-portal-markers">Portal Markers</label>
+            </div>
+          </div>
+          
           <div className="export-buttons">
             <button className="export-button" onClick={() => handleExport('glb')}>
               Export GLB
             </button>
             <button className="export-button" onClick={() => handleExport('obj')}>
               Export OBJ
+            </button>
+            <button className="export-button" onClick={handlePortalSchemaExport}>
+              Export Portal Schema
             </button>
           </div>
         </div>
@@ -299,6 +456,10 @@ const ThreeDBuilder: React.FC<ThreeDBuilderProps> = ({ floorPlan, isOpen, onClos
               wallThickness={wallThickness}
               wireframe={wireframe}
               floorplanCenter={floorplanCenter}
+              showWalls={showWalls}
+              showFloors={showFloors}
+              showPortals={showPortals}
+              showPortalMarkers={showPortalMarkers}
             />
           </Canvas>
         </div>
@@ -350,7 +511,11 @@ const FloorPlanModel: React.FC<{
   wallThickness: number;
   wireframe: boolean;
   floorplanCenter: FloorplanCenter;
-}> = ({ floorPlan, wallHeight, wallThickness, wireframe, floorplanCenter }) => {
+  showWalls: boolean;
+  showFloors: boolean;
+  showPortals: boolean;
+  showPortalMarkers: boolean;
+}> = ({ floorPlan, wallHeight, wallThickness, wireframe, floorplanCenter, showWalls, showFloors, showPortals, showPortalMarkers }) => {
   const sceneRef = useRef<THREE.Group>(null);
   
   // Handle model export
@@ -426,89 +591,99 @@ const FloorPlanModel: React.FC<{
       {floorPlan.rooms.map((room) => (
         <group key={room.id} position={[0, 0, 0]}>
           {/* Room floor */}
-          <mesh 
-            position={[room.x + room.width / 2, 0, room.y + room.height / 2]} 
-            rotation={[-Math.PI / 2, 0, 0]}
-            receiveShadow
-          >
-            <planeGeometry args={[room.width, room.height]} />
-            <meshStandardMaterial 
-              color={wireframe ? "#ffffff" : "#f5f5f5"} 
-              wireframe={wireframe}
-              roughness={0.8}
-              metalness={0.1}
-            />
-          </mesh>
+          {showFloors && (
+            <mesh 
+              position={[room.x + room.width / 2, 0, room.y + room.height / 2]} 
+              rotation={[-Math.PI / 2, 0, 0]}
+              receiveShadow
+            >
+              <planeGeometry args={[room.width, room.height]} />
+              <meshStandardMaterial 
+                color={wireframe ? "#ffffff" : "#f5f5f5"} 
+                wireframe={wireframe}
+                roughness={0.8}
+                metalness={0.1}
+              />
+            </mesh>
+          )}
           
           {/* Room perimeter walls - always render these */}
           {/* Front wall */}
-          <mesh 
-            position={[room.x + room.width / 2, wallHeight / 2, room.y]} 
-            rotation={[0, 0, 0]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[room.width, wallHeight, wallThickness]} />
-            <meshStandardMaterial 
-              color={wireframe ? "#ffffff" : "#e8e8e8"} 
-              wireframe={wireframe}
-              roughness={0.7}
-              metalness={0.0}
-            />
-          </mesh>
+          {showWalls && (
+            <mesh 
+              position={[room.x + room.width / 2, wallHeight / 2, room.y]} 
+              rotation={[0, 0, 0]}
+              castShadow
+              receiveShadow
+            >
+              <boxGeometry args={[room.width, wallHeight, wallThickness]} />
+              <meshStandardMaterial 
+                color={wireframe ? "#ffffff" : "#e8e8e8"} 
+                wireframe={wireframe}
+                roughness={0.7}
+                metalness={0.0}
+              />
+            </mesh>
+          )}
           
           {/* Back wall */}
-          <mesh 
-            position={[room.x + room.width / 2, wallHeight / 2, room.y + room.height]} 
-            rotation={[0, 0, 0]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[room.width, wallHeight, wallThickness]} />
-            <meshStandardMaterial 
-              color={wireframe ? "#ffffff" : "#e8e8e8"} 
-              wireframe={wireframe}
-              roughness={0.7}
-              metalness={0.0}
-            />
-          </mesh>
+          {showWalls && (
+            <mesh 
+              position={[room.x + room.width / 2, wallHeight / 2, room.y + room.height]} 
+              rotation={[0, 0, 0]}
+              castShadow
+              receiveShadow
+            >
+              <boxGeometry args={[room.width, wallHeight, wallThickness]} />
+              <meshStandardMaterial 
+                color={wireframe ? "#ffffff" : "#e8e8e8"} 
+                wireframe={wireframe}
+                roughness={0.7}
+                metalness={0.0}
+              />
+            </mesh>
+          )}
           
           {/* Left wall */}
-          <mesh 
-            position={[room.x, wallHeight / 2, room.y + room.height / 2]} 
-            rotation={[0, Math.PI / 2, 0]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[room.height, wallHeight, wallThickness]} />
-            <meshStandardMaterial 
-              color={wireframe ? "#ffffff" : "#e8e8e8"} 
-              wireframe={wireframe}
-              roughness={0.7}
-              metalness={0.0}
-            />
-          </mesh>
+          {showWalls && (
+            <mesh 
+              position={[room.x, wallHeight / 2, room.y + room.height / 2]} 
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+            >
+              <boxGeometry args={[room.height, wallHeight, wallThickness]} />
+              <meshStandardMaterial 
+                color={wireframe ? "#ffffff" : "#e8e8e8"} 
+                wireframe={wireframe}
+                roughness={0.7}
+                metalness={0.0}
+              />
+            </mesh>
+          )}
           
           {/* Right wall */}
-          <mesh 
-            position={[room.x + room.width, wallHeight / 2, room.y + room.height / 2]} 
-            rotation={[0, Math.PI / 2, 0]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[room.height, wallHeight, wallThickness]} />
-            <meshStandardMaterial 
-              color={wireframe ? "#ffffff" : "#e8e8e8"} 
-              wireframe={wireframe}
-              roughness={0.7}
-              metalness={0.0}
-            />
-          </mesh>
+          {showWalls && (
+            <mesh 
+              position={[room.x + room.width, wallHeight / 2, room.y + room.height / 2]} 
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+              receiveShadow
+            >
+              <boxGeometry args={[room.height, wallHeight, wallThickness]} />
+              <meshStandardMaterial 
+                color={wireframe ? "#ffffff" : "#e8e8e8"} 
+                wireframe={wireframe}
+                roughness={0.7}
+                metalness={0.0}
+              />
+            </mesh>
+          )}
           
           {/* Internal walls (if any) */}
           {room.walls.map((wall, wallIndex) => {
-            // Check if this is a portal
-            const isPortal = room.portalIds.includes(wall.id);
+            // Check if this is a portal - same logic as in FloorPlanCanvas
+            const isPortal = 'isPortal' in wall && (wall as Portal).isPortal === true;
             
             // Get vertices for this wall
             const vertexIDs = wall.vertexIds;
@@ -534,23 +709,92 @@ const FloorPlanModel: React.FC<{
             const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
             
             return (
-              <mesh 
-                key={`${room.id}-wall-${wallIndex}`} 
-                position={[room.x + mid.x, wallHeight / 2, room.y + mid.z]}
-                rotation={[0, Math.atan2(dir.x, dir.z), 0]}
-                castShadow
-                receiveShadow
-              >
-                <boxGeometry args={[wallThickness, wallHeight, length]} />
-                <meshStandardMaterial 
-                  color={isPortal ? '#ff6b6b' : (wireframe ? "#ffffff" : "#e8e8e8")} 
-                  wireframe={wireframe}
-                  roughness={0.7}
-                  metalness={0.0}
-                  emissive={isPortal ? "#ff2222" : "#000000"}
-                  emissiveIntensity={isPortal ? 0.2 : 0}
-                />
-              </mesh>
+              <React.Fragment key={`${room.id}-wall-${wallIndex}`}>
+                {/* Render wall/portal based on type and settings */}
+                {((isPortal && showPortals) || (!isPortal && showWalls)) && (
+                  <mesh 
+                    position={[room.x + mid.x, wallHeight / 2, room.y + mid.z]}
+                    rotation={[0, Math.atan2(dir.x, dir.z), 0]}
+                    castShadow
+                    receiveShadow
+                  >
+                    <boxGeometry args={[wallThickness, wallHeight, length]} />
+                    <meshStandardMaterial 
+                      color={isPortal ? '#ff6b6b' : (wireframe ? "#ffffff" : "#e8e8e8")} 
+                      wireframe={wireframe}
+                      roughness={0.7}
+                      metalness={0.0}
+                      emissive={isPortal ? "#ff2222" : "#000000"}
+                      emissiveIntensity={isPortal ? 0.2 : 0}
+                    />
+                  </mesh>
+                )}
+                
+                {/* Add corner indicators for portals */}
+                {showPortalMarkers && isPortal && (
+                  <>
+                    {/* Corner indicator at start vertex (bottom) */}
+                    <mesh 
+                      position={[room.x + start.x, wallThickness / 2, room.y + start.z]}
+                      castShadow
+                      receiveShadow
+                    >
+                      <boxGeometry args={[wallThickness * 2, wallThickness, wallThickness * 2]} />
+                      <meshStandardMaterial 
+                        color="#ffff00" 
+                        wireframe={wireframe}
+                        emissive="#ffaa00"
+                        emissiveIntensity={0.3}
+                      />
+                    </mesh>
+                    
+                    {/* Corner indicator at end vertex (bottom) */}
+                    <mesh 
+                      position={[room.x + end.x, wallThickness / 2, room.y + end.z]}
+                      castShadow
+                      receiveShadow
+                    >
+                      <boxGeometry args={[wallThickness * 2, wallThickness, wallThickness * 2]} />
+                      <meshStandardMaterial 
+                        color="#ffff00" 
+                        wireframe={wireframe}
+                        emissive="#ffaa00"
+                        emissiveIntensity={0.3}
+                      />
+                    </mesh>
+                    
+                    {/* Corner indicator at start vertex (top) */}
+                    <mesh 
+                      position={[room.x + start.x, wallHeight - wallThickness / 2, room.y + start.z]}
+                      castShadow
+                      receiveShadow
+                    >
+                      <boxGeometry args={[wallThickness * 2, wallThickness, wallThickness * 2]} />
+                      <meshStandardMaterial 
+                        color="#ffff00" 
+                        wireframe={wireframe}
+                        emissive="#ffaa00"
+                        emissiveIntensity={0.3}
+                      />
+                    </mesh>
+                    
+                    {/* Corner indicator at end vertex (top) */}
+                    <mesh 
+                      position={[room.x + end.x, wallHeight - wallThickness / 2, room.y + end.z]}
+                      castShadow
+                      receiveShadow
+                    >
+                      <boxGeometry args={[wallThickness * 2, wallThickness, wallThickness * 2]} />
+                      <meshStandardMaterial 
+                        color="#ffff00" 
+                        wireframe={wireframe}
+                        emissive="#ffaa00"
+                        emissiveIntensity={0.3}
+                      />
+                    </mesh>
+                  </>
+                )}
+              </React.Fragment>
             );
           })}
         </group>
